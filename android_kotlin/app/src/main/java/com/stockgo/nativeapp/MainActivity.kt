@@ -54,6 +54,12 @@ class MainActivity : ComponentActivity() {
     private var preview: ImageView? = null
     private var imageLoading = false
     private var imageJob: Job? = null
+    private var visible = false
+    private var reconnectJob: Job? = null
+    private var reconnectAttempt = 0
+    private var eventJob: Job? = null
+    private var inventoryRefresh: (() -> Unit)? = null
+    private var saleClient = JSONObject()
     private val imagePicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             imageLoading = true
@@ -129,6 +135,41 @@ class MainActivity : ComponentActivity() {
             }
         })
         login()
+    }
+    override fun onStart() {
+        super.onStart(); visible = true
+        if (api?.token?.isNotEmpty() == true) setupRealtime()
+    }
+    override fun onStop() {
+        visible = false; reconnectJob?.cancel(); eventJob?.cancel(); api?.pauseRealtime()
+        super.onStop()
+    }
+    private fun setupRealtime() {
+        api?.onChange = { domain -> runOnUiThread {
+            if (visible) {
+                if (domain == "disconnected") {
+                    if (reconnectJob?.isActive != true) reconnectJob = lifecycleScope.launch {
+                        delay(((1L shl reconnectAttempt.coerceAtMost(5)).coerceAtMost(30) * 1000) + (0..1000).random())
+                        reconnectAttempt++; api?.resumeRealtime()
+                    }
+                } else if (domain == "session_invalidated") {
+                    api?.pauseRealtime(); api?.token = ""; cart.clear(); saleRequest = null; saleClient = JSONObject(); login()
+                    message("Tu sesión cambió. Vuelve a ingresar.")
+                } else {
+                    reconnectAttempt = 0
+                    eventJob?.cancel()
+                    eventJob = lifecycleScope.launch {
+                        delay(750) // Agrupa los avisos de inventario y ventas de una misma transacción.
+                        if (!busy && visible) when (screen) {
+                            "inventory" -> inventoryRefresh?.invoke()
+                            "reports" -> if (domain in listOf("sales", "resync")) reports()
+                            "team" -> if (domain in listOf("users", "resync")) team()
+                        }
+                    }
+                }
+            }
+        } }
+        if (visible) api?.resumeRealtime()
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
@@ -300,6 +341,7 @@ class MainActivity : ComponentActivity() {
         try {
             val saved = JSONObject(raw)
             saleRequest = saved.getString("solicitud")
+            saleClient = saved.optJSONObject("cliente") ?: JSONObject()
             cart.clear()
             val lines = saved.getJSONArray("productos")
             for (i in 0 until lines.length()) {
@@ -319,7 +361,7 @@ class MainActivity : ComponentActivity() {
             listOf("id", "nombre", "codigo", "precio", "lote", "unidadVenta").forEach { key -> snapshot.put(key, product.opt(key)) }
             products.put(JSONObject().put("producto", snapshot).put("cantidad", quantity))
         }
-        val raw = JSONObject().put("solicitud", saleRequest).put("productos", products).toString()
+        val raw = JSONObject().put("solicitud", saleRequest).put("productos", products).put("cliente", saleClient).toString()
         val key = pendingKey()
         withContext(Dispatchers.IO) {
             check(getSharedPreferences("ventas_pendientes", MODE_PRIVATE).edit().putString(key, raw).commit()) {
@@ -332,6 +374,7 @@ class MainActivity : ComponentActivity() {
         saleRequest = null
     }
     private fun afterLogin() {
+        setupRealtime()
         if (api!!.mustChange) passwordScreen()
         else { restorePending(); home() }
     }
@@ -394,13 +437,18 @@ class MainActivity : ComponentActivity() {
         }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         page.addView(list, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
-        fun reload() {
+        var nextCursor: Int? = null
+        val more = Button(this).apply { text = "Cargar más productos"; isAllCaps = false; visibility = View.GONE }
+        fun reload(append: Boolean = false) {
             inventoryJob?.cancel()
             inventoryJob = lifecycleScope.launch {
-                delay(300)
+                delay(if (append) 0 else 600)
                 try {
-                    val result = api!!.request("GET", "products?q=${URLEncoder.encode(search.text.toString().trim(), "UTF-8")}&inactivos=${inactive.isChecked}")
-                    list.removeAllViews()
+                    val cursor = if (append) nextCursor ?: 0 else 0
+                    val result = api!!.request("GET", "products?q=${URLEncoder.encode(search.text.toString().trim(), "UTF-8")}&inactivos=${inactive.isChecked}&limit=50&cursor=$cursor")
+                    if (!append) list.removeAllViews()
+                    nextCursor = if (result.isNull("nextCursor")) null else result.optInt("nextCursor")
+                    more.visibility = if (nextCursor == null) View.GONE else View.VISIBLE
                     val products = result.getJSONArray("productos")
                     if (products.length() == 0) list.addView(text("No hay productos. ${if (api!!.admin) "Agrega el primero para comenzar." else "Consulta al administrador."}"))
                     for (i in 0 until products.length()) {
@@ -423,13 +471,16 @@ class MainActivity : ComponentActivity() {
                 } catch (_: Exception) { list.removeAllViews(); list.addView(text("No se pudo cargar. Revisa el servidor de PC.")) }
             }
         }
+        inventoryRefresh = { api?.clearCache(); reload() }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { reload() }
             override fun afterTextChanged(s: Editable?) = Unit
         })
         inactive.setOnCheckedChangeListener { _, _ -> reload() }
-        button(page, "Actualizar inventario") { reload() }
+        page.addView(more)
+        more.setOnClickListener { if (!busy) reload(true) }
+        button(page, "Actualizar inventario") { api?.clearCache(); reload() }
         if (api!!.seller) button(page, "Ver cuenta (${cart.size} productos)", navy) { cartScreen() }
         reload()
     }
@@ -447,6 +498,13 @@ class MainActivity : ComponentActivity() {
         }
     }
     private fun productDetail(p: JSONObject) {
+        action {
+            val detail = api!!.request("GET", "products/${p.getInt("id")}").optJSONObject("producto")
+                ?: throw IllegalArgumentException("El producto ya no está disponible.")
+            showProductDetail(detail)
+        }
+    }
+    private fun showProductDetail(p: JSONObject) {
         reset(p.getString("nombre"), p.getString("codigo"), "detail")
         val box = section(title = "Ficha de ${p.optString("categoria").lowercase()}", subtitle = "Precio ${money(price(p))} · Disponible ${p.getInt("cantidad")}")
         ProductFields.fields(p.optString("categoria"), p.optString("tipo")).forEach {
@@ -550,10 +608,20 @@ class MainActivity : ComponentActivity() {
             val box = section(title = product.getString("nombre"), subtitle = "${product.getString("codigo")} · Lote ${product.optString("lote")}\n$qty × ${money(price(product))} = ${money(price(product) * qty)}")
             if (saleRequest == null) button(box, "Quitar de la cuenta", navy) { cart.remove(id); cartScreen() }
         }
+        val clientBox = section(title = "Cliente de esta venta", subtitle = "Solo se guarda con el comprobante; no se crea un catálogo de clientes.")
+        val clientName = field(clientBox, "Nombre del cliente", saleClient.optString("nombre"))
+        val clientDescription = field(clientBox, "Descripción del cliente", saleClient.optString("descripcion"))
+        if (saleRequest != null) { clientName.isEnabled = false; clientDescription.isEnabled = false }
         val summary = section(title = "Total ${money(total)}", subtitle = "Se descontarán existencias al confirmar. Una caja o juego equivale a la unidad de venta registrada; no se convierte automáticamente a piezas.")
         if (saleRequest == null) button(summary, "Agregar más productos") { inventory() }
         else summary.addView(text("Respuesta pendiente: reintenta la misma venta. El servidor evita registrarla dos veces."))
         if (cart.isNotEmpty()) button(summary, if (saleRequest == null) "Confirmar venta" else "Reintentar venta", green) {
+            if (saleRequest == null) {
+                if (clientName.text.toString().trim().length < 2) {
+                    clientName.error = "Ingresa el nombre del cliente."; return@button
+                }
+                saleClient = JSONObject().put("nombre", clientName.text.toString().trim()).put("descripcion", clientDescription.text.toString().trim())
+            }
             AlertDialog.Builder(this).setTitle("Confirmar venta").setMessage("Total ${money(total)}. ¿Registrar a nombre de ${api!!.user.optString("nombres")}?")
                 .setNegativeButton("Cancelar", null).setPositiveButton("Registrar") { _, _ -> action {
                     if (saleRequest == null) saleRequest = UUID.randomUUID().toString()
@@ -561,8 +629,8 @@ class MainActivity : ComponentActivity() {
                     cart.forEach { (id, line) -> lines.put(JSONObject().put("productoId", id).put("cantidad", line.second).put("precioEsperadoCentavos", price(line.first))) }
                     try {
                         persistPending()
-                        val result = api!!.request("POST", "sales", JSONObject().put("solicitud", saleRequest).put("lineas", lines)).getJSONObject("venta")
-                        cart.clear(); clearPending(); home()
+                        val result = api!!.request("POST", "sales", JSONObject().put("solicitud", saleRequest).put("lineas", lines).put("cliente", saleClient)).getJSONObject("venta")
+                        cart.clear(); clearPending(); saleClient = JSONObject(); home()
                         message("Venta #${result.getInt("id")} registrada. Total ${money(result.getLong("totalCentavos"))}.")
                     } catch (e: ApiError) {
                         if (e.status in listOf(400, 403, 404, 409, 429)) clearPending()
@@ -595,11 +663,12 @@ class MainActivity : ComponentActivity() {
                 val cutoff = when (period.selectedItemPosition) { 1 -> System.currentTimeMillis() - 7L * 86400000; 2 -> System.currentTimeMillis() - 30L * 86400000; 3 -> {
                     val cal = java.util.Calendar.getInstance(); cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0); cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0); cal.timeInMillis
                 }; else -> 0L }
-                val rows = (0 until sales.length()).map { sales.getJSONObject(it) }.filter { sale ->
+                val historyRows = (0 until sales.length()).map { sales.getJSONObject(it) }.filter { sale ->
                     val who = "${sale.getString("vendedor")} · ${sale.optString("codigoVendedor")}"
                     val correctSeller = !api!!.admin || sellerFilter.selectedItemPosition <= 0 || who == sellerFilter.selectedItem.toString()
                     correctSeller && try { java.time.Instant.parse(sale.getString("fecha")).toEpochMilli() >= cutoff } catch (_: Exception) { cutoff == 0L }
                 }
+                val rows = historyRows.filter { it.optString("estado", "confirmada") != "anulada" }
                 var units = 0L; var income = 0L; var cost = 0L
                 val sellers = linkedMapOf<String, LongArray>()
                 val products = linkedMapOf<String, LongArray>()
@@ -627,14 +696,25 @@ class MainActivity : ComponentActivity() {
                         }, LinearLayout.LayoutParams(-1, dp(8)))
                     }
                 }
-                rows.forEach { sale ->
+                historyRows.forEach { sale ->
                     val card = section(output, "Venta #${sale.getInt("id")} · ${money(sale.getLong("totalCentavos"))}", "${sale.getString("fecha")}\n${sale.getString("vendedor")} · ${sale.optString("codigoVendedor")}")
+                    val customer = sale.optJSONObject("cliente") ?: JSONObject()
+                    card.addView(text("Cliente: ${customer.optString("nombre")}\n${customer.optString("descripcion")}\nEstado: ${sale.optString("estado", "confirmada")}", 14f))
                     button(card, "Ver productos vendidos") {
                         val details = sale.getJSONArray("detalles")
                         message((0 until details.length()).joinToString("\n\n") { j ->
                             val d = details.getJSONObject(j)
                             "${d.getString("nombre")} (${d.getString("codigo")})\n${d.getInt("cantidad")} × ${money(d.getLong("precioCentavos"))} · Lote ${d.optString("lote")}"
                         })
+                    }
+                    if (api!!.admin && sale.optString("estado") != "anulada") button(card, "Eliminar / anular venta", Color.rgb(164, 55, 55)) {
+                        val reason = EditText(this@MainActivity).apply { hint = "Motivo de anulación" }
+                        AlertDialog.Builder(this@MainActivity).setTitle("¿Anular venta #${sale.getInt("id")}?")
+                            .setMessage("Se devolverán las existencias una sola vez y se conservará el comprobante en el historial.")
+                            .setView(reason).setNegativeButton("Cancelar", null).setPositiveButton("Anular y devolver stock") { _, _ -> action {
+                                api!!.request("POST", "sales/${sale.getInt("id")}/cancel", JSONObject().put("motivo", reason.text.toString()))
+                                page.post { reports() }
+                            } }.show()
                     }
                 }
             }
@@ -731,6 +811,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         action {
+            api?.pauseRealtime(); reconnectJob?.cancel(); api?.clearCache()
             try { api?.request("POST", "auth/logout", JSONObject()) } catch (_: IOException) { /* Sesión local se limpia igualmente. */ }
             finally {
                 api?.token = ""; api?.user = JSONObject(); cart.clear(); saleRequest = null

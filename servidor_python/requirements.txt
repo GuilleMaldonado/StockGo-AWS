@@ -1,2 +1,0 @@
-# Ejecución: solo biblioteca estándar Python 3.11+ (incluido Tkinter).
-# Para empaquetar opcionalmente el EXE: pyinstaller (ver documentación).

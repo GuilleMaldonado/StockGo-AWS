@@ -1,0 +1,14 @@
+.git
+.venv
+.env
+.env.*
+build
+dist
+artifacts
+android_kotlin
+desktop
+**/__pycache__
+**/*.db
+**/*.jks
+**/*.key
+**/tests

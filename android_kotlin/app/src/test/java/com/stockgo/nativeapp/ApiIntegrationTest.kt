@@ -12,7 +12,7 @@ import java.util.UUID
 class ApiIntegrationTest {
     @Test fun kotlinClientConnectsCreatesProductAndSellerSells() = runBlocking {
         val python = System.getenv("STOCKGO_TEST_PYTHON") ?: "python"
-        val fixture = File("../../servidor_python/tests/fixture_server.py").canonicalFile
+        val fixture = File("../../api/tests/fixture_server.py").canonicalFile
         require(fixture.exists()) { "No se encontró el servidor de pruebas: $fixture" }
         val process = ProcessBuilder(python, "-u", fixture.path).start()
         try {
@@ -25,6 +25,9 @@ class ApiIntegrationTest {
             assertEquals("Negocio de prueba", admin.name)
             admin.login("propietario", "Universidad123!")
             assertTrue(admin.admin)
+            admin.resumeRealtime()
+            repeat(200) { if (!admin.realtimeReady) kotlinx.coroutines.delay(50) }
+            assertTrue("El cliente debe poder usar solicitudes WebSocket", admin.realtimeReady)
             admin.request("POST", "users", JSONObject().put("usuario", "vendedor.uno").put("password", "Vendedor123!")
                 .put("nombres", "Juan").put("apellidos", "Pérez").put("rol", "vendedor"))
             val product = JSONObject().put("nombre", "Filtro aceite").put("codigo", "F-001").put("precio", 50)
@@ -35,7 +38,9 @@ class ApiIntegrationTest {
             assertTrue(seller.seller); assertFalse(seller.admin)
             val found = seller.request("GET", "products?q=F-001").getJSONArray("productos").getJSONObject(0)
             assertFalse(found.has("costo"))
-            val request = JSONObject().put("solicitud", UUID.randomUUID().toString()).put("lineas", JSONArray()
+            val request = JSONObject().put("solicitud", UUID.randomUUID().toString())
+                .put("cliente", JSONObject().put("nombre", "Carlos Pérez").put("descripcion", "Cliente de mostrador"))
+                .put("lineas", JSONArray()
                 .put(JSONObject().put("productoId", id).put("cantidad", 2).put("precioEsperadoCentavos", 5000)))
             val sale = seller.request("POST", "sales", request).getJSONObject("venta")
             val retry = seller.request("POST", "sales", request).getJSONObject("venta")
@@ -45,6 +50,9 @@ class ApiIntegrationTest {
             assertFalse(sale.getJSONArray("detalles").getJSONObject(0).has("costoCentavos"))
             assertEquals(2, admin.request("GET", "products/$id").getJSONObject("producto").getInt("cantidad"))
             assertEquals(1, seller.request("GET", "sales").getJSONArray("ventas").length())
+            assertEquals("Carlos Pérez", sale.getJSONObject("cliente").getString("nombre"))
+            admin.request("POST", "sales/${sale.getInt("id")}/cancel", JSONObject().put("motivo", "Cliente cancela la venta"))
+            assertEquals(4, admin.request("GET", "products/$id").getJSONObject("producto").getInt("cantidad"))
             val userId = seller.user.getInt("id")
             val temporary = admin.request("POST", "users/reset-password", JSONObject().put("usuarioId", userId)
                 .put("passwordAdmin", "Universidad123!")).getString("temporal")
@@ -57,6 +65,7 @@ class ApiIntegrationTest {
             assertFalse(seller.mustChange)
             seller.request("GET", "products")
             seller.request("POST", "auth/logout", JSONObject())
+            admin.pauseRealtime()
             Unit
         } finally {
             process.outputStream.close()

@@ -76,3 +76,8 @@ StockGoBuildKeys/
 /android/build/
 /scripts/estado_hipervisor.json
 **/__pycache__/
+.venv/
+.pytest_cache/
+*.egg-info/
+*.db-journal
+/artifacts/
