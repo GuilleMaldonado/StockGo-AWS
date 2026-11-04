@@ -2,6 +2,8 @@
 
 StockGo usa una API central Python, PostgreSQL y WebSockets. Android es Kotlin nativo. La interfaz de PC y navegador la sirve Python mediante HTML/CSS/JavaScript. No hay motor Flutter, archivos Dart ni dependencias Flutter en esta rama.
 
+[Descargar APK de prueba 3.0.0](https://github.com/jhonnatanGranados/StockGo-AWS/releases/tag/v3.0.0-demo).
+
 **Repositorio nuevo:** StockGo-AWS. **Rama de trabajo:** `codex/aws-postgresql`. La aplicación local anterior sigue en el repositorio StockGo. Esta variante puede probarse en Render gratis antes de migrar a Amazon.
 
 ## Qué incluye
@@ -57,6 +59,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\compilar_apk.ps1 -
 Salida: `dist/StockGo-Cloud-Android.apk`. Identidad `com.stockgo.cloudapp`, Android 7/API 24 o posterior. Puede coexistir con los APK anteriores. Se conecta al URL de su código SG1; no contiene secretos de base de datos.
 
 Las pruebas requieren PostgreSQL real. `STOCKGO_TEST_DATABASE_URL` debe apuntar a una base exclusiva de pruebas; cada caso crea y elimina solo su propio esquema temporal.
+
+Verificación realizada: 10 pruebas Python/PostgreSQL y 4 Kotlin superadas; migración Alembic aplicada en una base nueva y comprobada contra los modelos. En navegador se probó alta de producto, venta con cliente y anulación con retorno de existencias. El APK release está firmado y alineado. No se ha desplegado en una cuenta Render ni construido el contenedor con Docker en esta PC; la prueba del APK en un teléfono físico queda pendiente.
 
 ```powershell
 $env:PYTHONPATH = "$PWD/api"
