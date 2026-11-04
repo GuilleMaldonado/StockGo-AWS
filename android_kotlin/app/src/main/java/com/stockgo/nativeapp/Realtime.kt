@@ -44,7 +44,15 @@ class Realtime(private val onEvent: (String) -> Unit) : WebSocketListener() {
         } catch (_: Exception) { /* Un mensaje inválido no debe cerrar la interfaz. */ }
     }
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { if (webSocket === socket) lost() }
-    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (webSocket === socket) lost() }
+    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+        if (webSocket !== socket) return
+        if (code == 4001) {
+            ready = false
+            pending.values.forEach { it.completeExceptionally(ApiError(401, "La sesión expiró. Vuelve a ingresar.")) }
+            pending.clear()
+            onEvent("session_invalidated")
+        } else lost()
+    }
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
     private fun lost() {
         ready = false

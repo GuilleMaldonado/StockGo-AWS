@@ -7,6 +7,7 @@ import uuid
 from PIL import Image
 import pytest
 from sqlalchemy import select
+from sqlalchemy import event
 
 from stockgo_cloud.domain import Error
 from stockgo_cloud.models import Product, Sale
@@ -182,3 +183,22 @@ def test_images_thumbnail_validation_and_throttle(system):
     assert client.post('/connect', json={'codigo': 'incorrecto'}).status_code == 429
     invalid = client.post('/products', json={'nombre': 'X', 'codigo': 'X', 'precio': 2, 'costo': 3, 'cantidad': 1}, headers=admin)
     assert invalid.status_code == 400
+
+
+def test_reports_load_details_in_batch_instead_of_one_query_per_sale(system):
+    client, factory, _, _ = system
+    _, admin = provision(system)
+    pid = product(client, admin, cantidad=20)
+    for _ in range(5):
+        assert client.post('/sales', json=sale_body(pid, 1), headers=admin).status_code == 200
+    queries = []
+    engine = factory.kw['bind']
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lower().startswith('select'): queries.append(statement)
+    event.listen(engine, 'before_cursor_execute', capture)
+    try:
+        result = client.get('/sales', headers=admin)
+        assert result.status_code == 200 and len(result.json()['ventas']) == 5
+        assert len([q for q in queries if 'sale_details' in q]) == 1
+    finally:
+        event.remove(engine, 'before_cursor_execute', capture)

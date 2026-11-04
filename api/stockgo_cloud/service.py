@@ -426,14 +426,21 @@ class Service:
         # Informes completos por rango. El cliente los solicita solo al abrir o recibir evento.
         statement = select(Sale).where(Sale.business_id == code)
         if user.rol != 'administrador': statement = statement.where(Sale.usuarioId == user.id)
-        return {'ventas': [self.sale_json(db, s, user.rol == 'administrador') for s in db.scalars(statement.order_by(Sale.id.desc()))]}
+        sales = list(db.scalars(statement.order_by(Sale.id.desc())))
+        detail_query = select(SaleDetail).join(Sale, Sale.id == SaleDetail.ventaId).where(Sale.business_id == code, SaleDetail.business_id == code)
+        if user.rol != 'administrador': detail_query = detail_query.where(Sale.usuarioId == user.id)
+        grouped = {}
+        for detail in db.scalars(detail_query.order_by(SaleDetail.id)):
+            grouped.setdefault(detail.ventaId, []).append(detail)
+        return {'ventas': [self.sale_json(db, sale, user.rol == 'administrador', grouped.get(sale.id, [])) for sale in sales]}
 
     @staticmethod
-    def sale_json(db, sale, admin):
+    def sale_json(db, sale, admin, details=None):
         result = {k: getattr(sale, k) for k in ('id', 'vendedor', 'codigoVendedor', 'totalCentavos', 'cliente', 'estado', 'anuladaPor', 'motivoAnulacion')}
         result['fecha'] = sale.fecha.isoformat()
         result['anuladaFecha'] = sale.anuladaFecha.isoformat() if sale.anuladaFecha else None
-        details = db.scalars(select(SaleDetail).where(SaleDetail.business_id == sale.business_id, SaleDetail.ventaId == sale.id).order_by(SaleDetail.id))
+        if details is None:
+            details = db.scalars(select(SaleDetail).where(SaleDetail.business_id == sale.business_id, SaleDetail.ventaId == sale.id).order_by(SaleDetail.id))
         keys = ('productoId', 'nombre', 'codigo', 'lote', 'vencimiento', 'unidad', 'cantidad', 'precioCentavos') + (('costoCentavos',) if admin else ())
         result['detalles'] = [{k: getattr(d, k) for k in keys} for d in details]
         return result
