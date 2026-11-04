@@ -1,0 +1,26 @@
+STOCKGO 1.2.0 — PRUEBAS REALES
+
+WINDOWS (x64)
+Ejecuta StockGo-Instalador-Windows.exe. Instala la aplicación para tu usuario y crea accesos directos. Incluye el programa completo, su interfaz web y el runtime de Visual C++. Datos independientes de la instalación: %LOCALAPPDATA%\StockGo\databases. Actualizar o desinstalar el programa no elimina esos datos. Las bases de datos personales no se incluyen en el instalador.
+
+ANDROID (Android 7.0 o superior)
+Copia StockGo-Android-pruebas.apk al teléfono y ábrelo. Autoriza la instalación desde la aplicación que utilizaste para abrirlo. APK para teléfonos ARM y ARM64; conserva el ID existente para actualizar la app. Es una compilación release firmada con la clave propia de StockGo. Lee LEEME-Android.md: la firma cambió respecto de la APK anterior y Play Protect todavía puede pedir revisión del desarrollador.
+
+PRUEBA PC + TELÉFONO
+1. Abre StockGo en Windows. Crea o elige el negocio y accede como administrador.
+2. En Equipo, crea/invita al vendedor. En Compartir inventario, inicia el servidor y copia el código completo que muestra la app.
+3. Conecta ambos dispositivos a la misma Wi-Fi. En el teléfono elige Soy vendedor / Conectarme a un negocio, pega el código y accede con su cuenta. El código identifica el negocio y la dirección; los permisos siguen dependiendo de la cuenta.
+4. Agrega un producto en PC, consulta su stock en Android y registra una venta con el vendedor. Comprueba la reducción del stock y el historial.
+Mantén abierta la app que aloja el servidor. HTTP local autorizado para este prototipo; no requiere Firebase ni un servidor público. Si Windows solicita permiso de red, permite StockGo en tu red privada para que el teléfono pueda acceder.
+
+NAVEGADOR EN LA PC
+Con StockGo de escritorio abierto, entra en http://127.0.0.1:8079/. El navegador usa el servidor nativo; no puede alojarlo por sí mismo.
+
+RECOMPILAR
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\crear_instaladores.ps1
+Requiere Flutter, SDK Android, herramientas C++ de Visual Studio e Inno Setup (ISCC.exe en PATH o build/tools/inno). Compila secuencialmente web, Windows y Android; genera los paquetes y SHA256.txt en dist.
+
+iOS y macOS comparten el nuevo diseño. Sus paquetes nativos necesitan una Mac con Xcode; no se generan desde Windows.
+
+MANTENIMIENTO REMOTO 1.2.0
+Actualiza maestro y clientes. Equipo incluye restablecimiento con confirmación del administrador, clave temporal de 30 minutos e historial de seguridad. Cada usuario debe cambiar su clave temporal antes de operar. Para conexión desde otra red instala y autoriza Tailscale en ambos dispositivos, deja el maestro abierto y copia el código de la IP VPN. La app no instala ni configura ese túnel. Guía: docs/mantenimiento-remoto.md. Respalda la base antes de actualizar; se migra de versión 9 a 10.

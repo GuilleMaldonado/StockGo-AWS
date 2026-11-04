@@ -1,0 +1,9 @@
+{
+  "dart.flutterSdkPath": "C:/src/flutter",
+  "editor.formatOnSave": true,
+  "[dart]": {
+    "editor.defaultFormatter": "Dart-Code.dart-code"
+  },
+  "gradle.autoDetect": "off",
+  "java.import.gradle.enabled": false
+}
