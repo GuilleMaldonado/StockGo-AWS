@@ -1,0 +1,16 @@
+{
+  "name": "stockgo-api-operations",
+  "private": true,
+  "version": "3.1.0",
+  "description": "Operación de la API Python StockGo con PM2; Node no forma parte de la lógica de negocio.",
+  "scripts": {
+    "start": "python -m stockgo_cloud.start",
+    "start:pm2": "npx pm2 start ecosystem.config.cjs --env production",
+    "restart:pm2": "npx pm2 reload ecosystem.config.cjs --env production",
+    "logs:pm2": "npx pm2 logs stockgo-api",
+    "stop:pm2": "npx pm2 delete stockgo-api"
+  },
+  "devDependencies": {
+    "pm2": "^6.0.0"
+  }
+}

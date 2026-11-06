@@ -82,3 +82,6 @@ StockGoBuildKeys/
 *.egg-info/
 *.db-journal
 /artifacts/
+/build/stockgo-prueba-local.json
+/build/logs/
+/build/pyinstaller/

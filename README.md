@@ -26,7 +26,7 @@ Los teléfonos, navegadores y PC son clientes. **No alojan el servidor ni se con
 - Copia [frontend_web/.env.example](frontend_web/.env.example) para compilar el sitio. `STOCKGO_API_URL` es pública y puede terminar dentro de `config.js`; no coloques secretos allí.
 - [`.env.example`](.env.example) es únicamente para Docker Compose local.
 
-Lee [arquitectura central](docs/arquitectura-central.md) y [despliegue gratuito](docs/despliegue-gratuito.md) antes de crear recursos externos.
+Lee [arquitectura central](docs/arquitectura-central.md), [catálogo de archivos](docs/catalogo-archivos.md), [orden de despliegue](docs/orden-despliegue.md) y [despliegue gratuito](docs/despliegue-gratuito.md) antes de crear recursos externos.
 
 ## Desarrollo local (solo desarrolladores)
 
