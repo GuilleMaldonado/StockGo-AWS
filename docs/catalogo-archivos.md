@@ -70,6 +70,7 @@ Esta guía describe los archivos que debes modificar y los que debes conservar a
 | `scripts/verificar.ps1` | Ejecuta pruebas Python y Android. |
 | `scripts/compilar_apk.ps1` | Genera el APK firmado. |
 | `scripts/crear_instalador_windows.ps1` | Genera `dist/StockGo-Web.exe`. |
+| `scripts/provisionar_negocio.ps1` | Herramienta del responsable para crear el primer negocio y obtener su SG1. |
 
 ## Variables de entorno
 

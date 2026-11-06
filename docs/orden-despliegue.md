@@ -19,6 +19,12 @@
 7. **Crear vendedores y probar.** El administrador crea vendedores; Android y web ingresan con el mismo código SG1 y sus cuentas.
 8. **Distribuir los clientes.** Entrega el APK Android y el ejecutable Windows. Ambos necesitan Internet y el código SG1; ninguno debe traer secretos.
 
+Para una prueba local, después de iniciar la API se puede crear el primer negocio sin exponer la clave en la interfaz:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\provisionar_negocio.ps1
+```
+
 ## Variables de producción
 
 ```text
