@@ -81,7 +81,7 @@ class Api(val business: BusinessCode) {
     fun resumeRealtime() { if (realtimeSupported && token.isNotEmpty()) realtime.open(business, token) }
     fun pauseRealtime() { realtime.close() }
 
-    suspend fun request(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun request(method: String, path: String, body: JSONObject? = null, provisioningKey: String = ""): JSONObject = withContext(Dispatchers.IO) {
         HostPolicy.validate(business.url, business.vpn)
         val cacheable = method == "GET" && (path.startsWith("products?") || path == "sales")
         val key = "$token|$path"
@@ -112,6 +112,7 @@ class Api(val business: BusinessCode) {
             connection.readTimeout = 25000
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.setRequestProperty("X-StockGo-Code", business.id)
+            if (provisioningKey.isNotEmpty()) connection.setRequestProperty("X-StockGo-Provisioning-Key", provisioningKey)
             if (token.isNotEmpty()) connection.setRequestProperty("Authorization", "Bearer $token")
             if (!previous?.etag.isNullOrBlank()) connection.setRequestProperty("If-None-Match", previous!!.etag)
             if (body != null) {

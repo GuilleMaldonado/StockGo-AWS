@@ -27,7 +27,7 @@ El administrador entrega ese código a vendedores. El código no contiene una co
 
 ## Crear negocios sin exponer secretos
 
-La ruta `POST /businesses` sigue protegida por el encabezado `X-StockGo-Provisioning-Key`. No hay un formulario público para crear negocios en el frontend ni en Android. El responsable de la plataforma realiza ese aprovisionamiento desde una herramienta interna o una consola segura del proveedor y entrega después el SG1 resultante.
+La ruta `POST /businesses` sigue protegida por el encabezado `X-StockGo-Provisioning-Key`. Web y Android ofrecen **Crear negocio**, pero solo funciona al proporcionar esa clave privada; la clave no se guarda. El responsable de la plataforma puede usar la pantalla o la herramienta interna y entrega después el SG1 resultante.
 
 No pongas `PROVISIONING_KEY`, `DATABASE_URL`, archivos `.env` reales, certificados ni copias de base de datos en Git, en el APK o en el sitio estático.
 

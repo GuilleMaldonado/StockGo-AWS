@@ -308,7 +308,7 @@ class MainActivity : ComponentActivity() {
     private fun login() {
         reset("StockGo", "Inventario y ventas · Android nativo", "login")
         val preferences = getSharedPreferences("stockgo", MODE_PRIVATE)
-        val box = section(title = "Conecta con tu negocio", subtitle = "El administrador inicia el servidor Python en la PC y comparte su código.")
+        val box = section(title = "Conecta con tu negocio", subtitle = "Usa el código SG1 que te entregó el administrador del negocio.")
         val code = field(box, "Código completo SG1", preferences.getString("codigo", "").orEmpty())
         code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         button(box, "Conectar al negocio") {
@@ -321,6 +321,38 @@ class MainActivity : ComponentActivity() {
             }
         }
         page.addView(text("Sin Firebase. Los datos y los permisos se administran en el servidor de tu negocio.", 14f))
+        button(page, "Crear nuevo negocio", navy) { createBusiness() }
+    }
+    private fun createBusiness() {
+        reset("Crear negocio", "Se registrará en la API central; este teléfono no será servidor.", "business")
+        val box = section(title = "Datos del administrador inicial")
+        val apiUrl = field(box, "URL HTTPS de la API", "https://api.tu-dominio.example")
+        apiUrl.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        val business = field(box, "Nombre único del negocio")
+        val first = field(box, "Nombres")
+        val last = field(box, "Apellidos")
+        val user = field(box, "Usuario (sin números)")
+        val password = field(box, "Contraseña (8 a 128 caracteres)", password = true)
+        val confirm = field(box, "Repite la contraseña", password = true)
+        val key = field(box, "Clave de aprovisionamiento", password = true)
+        button(box, "Crear negocio y conectar", green) {
+            action {
+                require(password.text.toString() == confirm.text.toString()) { "Las contraseñas no coinciden." }
+                val uri = HostPolicy.validate(apiUrl.text.toString(), false)
+                val base = uri.toString().trimEnd('/')
+                val bootstrap = Api(BusinessCode(base, "00000000000000000000000000000000", false))
+                val payload = JSONObject().put("negocio", business.text.toString()).put("nombres", first.text.toString())
+                    .put("apellidos", last.text.toString()).put("usuario", user.text.toString()).put("password", password.text.toString())
+                val result = bootstrap.request("POST", "businesses", payload, key.text.toString())
+                val sg1 = result.getString("sg1")
+                getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", sg1).apply()
+                api = Api(BusinessCode.parse(sg1)); api!!.connect()
+                copy(sg1)
+                message("Negocio creado. El código SG1 se copió al portapapeles; guárdalo para tu equipo.")
+                credentials()
+            }
+        }
+        button(page, "Volver", navy) { login() }
     }
     private fun credentials() {
         reset(api!!.name, "Conexión establecida · elige tu acceso", "login")
