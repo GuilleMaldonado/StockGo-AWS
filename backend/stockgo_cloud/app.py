@@ -4,13 +4,10 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from .db import create_database
@@ -38,15 +35,16 @@ def create_app(settings=None, engine=None, factory=None):
     app = FastAPI(title='StockGo AWS', version='3.0.0', lifespan=lifespan,
                   docs_url='/docs' if settings.environment != 'production' else None, redoc_url=None)
     app.state.service, app.state.bus, app.state.factory = service, bus, factory
-    allowed_origins = set(settings.origins) | {settings.public_url}
-    static = Path(__file__).resolve().parent / 'web'
-    app.mount('/assets', StaticFiles(directory=static), name='assets')
+    # Esta API no sirve la interfaz. El navegador y Android son clientes
+    # independientes y solo se comunican con la URL pública de este servicio.
+    allowed_origins = set(settings.origins)
 
     @app.get('/')
-    async def portal():
-        return FileResponse(static / 'index.html', headers={'Cache-Control': 'no-cache',
-            'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'",
-            'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'})
+    async def api_info():
+        return JSONResponse({
+            'service': 'StockGo API', 'version': '3.1.0',
+            'health': '/health', 'ready': '/ready', 'websocket': '/ws',
+        }, headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
     app.add_middleware(CORSMiddleware, allow_origins=list(allowed_origins), allow_methods=['GET', 'POST', 'PUT'],
                        allow_headers=['Content-Type', 'Authorization', 'X-StockGo-Code', 'If-None-Match', 'X-StockGo-Provisioning-Key'],

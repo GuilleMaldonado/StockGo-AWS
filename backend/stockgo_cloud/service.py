@@ -154,7 +154,7 @@ class Service:
         db.add(business); db.flush()
         self.create_user(db, business.id, body, 'administrador')
         from .domain import sg1
-        return {'ok': True, 'nombreNegocio': name, 'codigo': business.id, 'sg1': sg1(self.settings.public_url, business.id)}
+        return {'ok': True, 'nombreNegocio': name, 'codigo': business.id, 'sg1': sg1(self.settings.api_public_url, business.id)}
 
     def handle(self, method, target, body, code='', token='', ip='unknown', provisioning_key='', if_none_match=''):
         uri = urlsplit(target)
@@ -229,7 +229,7 @@ class Service:
         if route in ('users', 'users/reset-password', 'server/info', 'security/audit'):
             self.require(user, 'administrador')
             if route == 'server/info' and method == 'GET':
-                return 200, {'codigo': code, 'direcciones': [self.settings.public_url]}, ''
+                return 200, {'codigo': code, 'direcciones': [self.settings.api_public_url]}, ''
             if route == 'users' and method == 'GET':
                 return 200, {'usuarios': [person(u) for u in db.scalars(select(User).where(User.business_id == code).order_by(User.nombre))], 'nombreNegocio': business.name}, ''
             if route == 'users' and method == 'POST':

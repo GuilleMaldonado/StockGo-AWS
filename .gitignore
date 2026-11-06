@@ -72,6 +72,7 @@ StockGoBuildKeys/
 # Paquetes generados y archivos temporales de revisión
 /dist/*.apk
 /dist/*.exe
+/frontend_web/dist/
 /review_tmp/
 /android/build/
 /scripts/estado_hipervisor.json

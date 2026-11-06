@@ -745,13 +745,13 @@ class MainActivity : ComponentActivity() {
     }
     private fun invite() {
         reset("Invitar al negocio", api!!.name, "invite")
-        val box = section(title = "Un código para este servidor", subtitle = "El destinatario pega este código e inicia sesión con su cuenta del negocio. El código no concede permisos de administrador.")
+        val box = section(title = "Código de acceso del negocio", subtitle = "El destinatario pega este código e inicia sesión con su cuenta. El código no concede permisos de administrador ni convierte su teléfono en servidor.")
         val data = JSONObject().put("url", api!!.business.url).put("negocio", api!!.business.id)
         if (api!!.business.vpn) data.put("vpn", true)
         val code = "SG1-" + Base64.encodeToString(data.toString().toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         box.addView(text(code, 14f).apply { setTextIsSelectable(true) })
         button(box, "Copiar código") { copy(code) }
-        page.addView(text("Este código usa ${api!!.business.url}. Si está en el emulador (10.0.2.2) o en esta PC (127.0.0.1), copia desde el panel Python la IP Wi-Fi para otros teléfonos.", 14f))
+        page.addView(text("Este código usa la API central segura ${api!!.business.url}. Todos los equipos consultan la misma nube.", 14f))
     }
     private fun resetPassword(user: JSONObject) {
         val password = EditText(this).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }

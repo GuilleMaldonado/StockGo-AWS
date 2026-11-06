@@ -14,7 +14,7 @@ services:
       retries: 10
     # La base no publica su puerto al exterior.
   api:
-    build: .
+    build: ./backend
     depends_on:
       db:
         condition: service_healthy
@@ -24,13 +24,21 @@ services:
       DB_USER: stockgo
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD}
       DB_NAME: stockgo
-      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8081}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://127.0.0.1:8081}
       PROVISIONING_KEY: ${PROVISIONING_KEY:?Configura PROVISIONING_KEY}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8081,http://localhost:8081}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8082,http://localhost:8082}
       DB_POOL_SIZE: 3
       DB_MAX_OVERFLOW: 2
       PORT: 8081
     ports:
       - '127.0.0.1:8081:8081'
+  web:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api
+    volumes:
+      - ./frontend_web/dist:/usr/share/nginx/html:ro
+    ports:
+      - '127.0.0.1:8082:80'
 volumes:
   postgres_data:

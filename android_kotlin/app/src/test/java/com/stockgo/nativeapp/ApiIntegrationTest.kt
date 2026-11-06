@@ -12,7 +12,7 @@ import java.util.UUID
 class ApiIntegrationTest {
     @Test fun kotlinClientConnectsCreatesProductAndSellerSells() = runBlocking {
         val python = System.getenv("STOCKGO_TEST_PYTHON") ?: "python"
-        val fixture = File("../../api/tests/fixture_server.py").canonicalFile
+        val fixture = File("../../backend/tests/fixture_server.py").canonicalFile
         require(fixture.exists()) { "No se encontró el servidor de pruebas: $fixture" }
         val process = ProcessBuilder(python, "-u", fixture.path).start()
         try {

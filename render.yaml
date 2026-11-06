@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: stockgo-cloud-demo
+    name: stockgo-api-demo
     runtime: docker
     plan: free
     region: oregon
     branch: codex/aws-postgresql
+    rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     autoDeployTrigger: 'off'
@@ -17,6 +18,11 @@ services:
           property: connectionString
       - key: PROVISIONING_KEY
         generateValue: true
+      - key: ALLOWED_ORIGINS
+        fromService:
+          name: stockgo-web-demo
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: DB_SSLMODE
         value: require
       - key: DB_POOL_SIZE
@@ -27,6 +33,28 @@ services:
         value: '1'
       - key: FORWARDED_ALLOW_IPS
         value: '*'
+  - type: web
+    name: stockgo-web-demo
+    runtime: static
+    rootDir: frontend_web
+    buildCommand: python build.py
+    staticPublishPath: ./dist
+    envVars:
+      - key: STOCKGO_API_URL
+        fromService:
+          name: stockgo-api-demo
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
 databases:
   - name: stockgo-demo-db
     plan: free

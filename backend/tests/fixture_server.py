@@ -29,7 +29,7 @@ def main():
     engine, factory = create_database(Settings(database_url=url.render_as_string(hide_password=False)))
     Base.metadata.create_all(engine)
     sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    settings = Settings(public_url=f'http://127.0.0.1:{port}', provisioning_key='SoloPruebaIntegracionNoProduccion' * 2)
+    settings = Settings(api_public_url=f'http://127.0.0.1:{port}', provisioning_key='SoloPruebaIntegracionNoProduccion' * 2)
     service = Service(factory, settings)
     _, info, _ = service.handle('POST', 'businesses', {'negocio': 'Negocio de prueba', 'usuario': 'propietario',
         'password': 'Universidad123!', 'nombres': 'Ana', 'apellidos': 'López'}, provisioning_key=settings.provisioning_key)
@@ -39,7 +39,7 @@ def main():
     while not server.started:
         if not thread.is_alive(): raise RuntimeError('El servidor no inició.')
         time.sleep(.05)
-    print(json.dumps({'url': settings.public_url, 'codigo': info['codigo']}), flush=True)
+    print(json.dumps({'url': settings.api_public_url, 'codigo': info['codigo']}), flush=True)
     try: sys.stdin.read()
     finally:
         server.should_exit = True; thread.join(15)
