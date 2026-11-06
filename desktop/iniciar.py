@@ -18,14 +18,15 @@ def main():
     frame = ttk.Frame(root, padding=30); frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='StockGo Cloud', style='Title.TLabel').pack(anchor='w')
     ttk.Label(frame, text='Inventario y ventas conectados a la nube central.').pack(anchor='w', pady=12)
-    ttk.Label(frame, text='Dirección HTTPS del sitio web StockGo publicado').pack(anchor='w')
-    entry = ttk.Entry(frame, font=('Segoe UI', 12)); entry.insert(0, 'https://app.tu-dominio.example')
+    ttk.Label(frame, text='Dirección HTTPS publicada o prueba local en esta PC').pack(anchor='w')
+    entry = ttk.Entry(frame, font=('Segoe UI', 12)); entry.insert(0, 'http://127.0.0.1:8082')
     entry.pack(fill='x', pady=15)
     def open_app():
         url = entry.get().strip().rstrip('/')
         parsed = urlsplit(url)
-        if parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname or parsed.scheme != 'https':
-            messagebox.showerror('Dirección inválida', 'Usa la dirección HTTPS del sitio web publicado.')
+        local = parsed.hostname in ('127.0.0.1', 'localhost')
+        if parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname or (parsed.scheme != 'https' and not (local and parsed.scheme == 'http')):
+            messagebox.showerror('Dirección inválida', 'Usa HTTPS en producción. HTTP solo se permite en 127.0.0.1 para prueba local.')
             return
         webbrowser.open(url)
     ttk.Button(frame, text='Abrir StockGo', command=open_app).pack(fill='x')
