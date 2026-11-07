@@ -5,16 +5,22 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import io
+import logging
 import re
 import secrets
+import smtplib
+import ssl
+from email.message import EmailMessage
 from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import delete, func, or_, select, text as sql_text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
-from .domain import CATEGORIES, COMMON, FIELDS, TECHNICAL, Error, identity, integer, matches, password_fields, text, valid_password
+from .domain import CATEGORIES, COMMON, FIELDS, TECHNICAL, Error, identity, integer, matches, password_fields, sg1, text, valid_password
 from .models import Audit, AuthSession, Business, BusinessRequest, Product, RateLimit, Sale, SaleDetail, User, VendorRequest, utcnow
+
+logger = logging.getLogger('stockgo.recovery')
 
 
 def person(user):
@@ -74,6 +80,42 @@ class Service:
     def __init__(self, factory, settings):
         self.factory = factory
         self.settings = settings
+
+    def send_recovery_email(self, subject, body):
+        """Entrega avisos a soporte sin registrar contraseñas ni secretos en logs."""
+        cfg = self.settings
+        if not all((cfg.recovery_email, cfg.smtp_host, cfg.smtp_username, cfg.smtp_password)):
+            logger.warning('Recuperación por correo no configurada; se conservó la solicitud en auditoría.')
+            return False
+        message = EmailMessage()
+        message['Subject'] = subject
+        message['From'] = cfg.smtp_from or cfg.smtp_username
+        message['To'] = cfg.recovery_email
+        message.set_content(body)
+        try:
+            with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=12) as smtp:
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.login(cfg.smtp_username, cfg.smtp_password)
+                smtp.send_message(message)
+            return True
+        except (OSError, smtplib.SMTPException):
+            logger.exception('No fue posible entregar el correo de recuperación.')
+            return False
+
+    def recovery_message(self, business, target, temporary=None):
+        lines = [
+            f'Negocio: {business.name}',
+            f'Usuario: {target.nombre}',
+            f'Código SG1: {sg1(self.settings.api_public_url, business.id)}',
+        ]
+        if temporary:
+            lines += [
+                '', f'Contraseña temporal: {temporary}',
+                'Vence en 30 minutos y obliga al usuario a crear una contraseña nueva.',
+            ]
+        else:
+            lines += ['', 'Se solicitó recuperación. Confirma la identidad y restablece la contraseña desde Equipo.']
+        return '\n'.join(lines)
 
     def limit(self, ip, route):
         sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/user-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
@@ -302,6 +344,10 @@ class Service:
             target = db.scalar(select(User).where(User.business_id == code, User.nombre == username))
             db.add(Audit(business_id=code, actorId=0, actor='Solicitud de recuperación',
                          objetivoId=target.id if target else 0, objetivo=username[:80], accion='solicitar_recuperacion'))
+            if target:
+                self.send_recovery_email(
+                    'StockGo: solicitud de recuperación', self.recovery_message(business, target)
+                )
             self.notify(db, code, 'users')
             return 202, {'ok': True, 'mensaje': 'Si la cuenta existe, el administrador del negocio podrá generar una clave temporal.'}, ''
         if method == 'POST' and route in ('auth/register', 'auth/login', 'auth/guest'):
@@ -390,7 +436,10 @@ class Service:
                 db.execute(delete(AuthSession).where(AuthSession.business_id == code, AuthSession.user_id == target.id))
                 self.audit(db, code, user, target.id, target.nombre, 'restablecer_password')
                 self.notify(db, code, 'credentials', target.id)
-                return 200, {'temporal': temporary, 'validezMinutos': 30}, ''
+                mailed = self.send_recovery_email(
+                    'StockGo: contraseña temporal', self.recovery_message(business, target, temporary)
+                )
+                return 200, {'temporal': temporary, 'validezMinutos': 30, 'correoEnviado': mailed}, ''
             if route == 'security/audit' and method == 'GET':
                 events = db.scalars(select(Audit).where(Audit.business_id == code).order_by(Audit.id.desc()).limit(200))
                 return 200, {'eventos': [{k: (getattr(e, k).isoformat() if k == 'fecha' else getattr(e, k)) for k in ('id', 'fecha', 'actorId', 'actor', 'objetivoId', 'objetivo', 'accion')} for e in events]}, ''

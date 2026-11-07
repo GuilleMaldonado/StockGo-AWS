@@ -977,7 +977,12 @@ class MainActivity : ComponentActivity() {
                 val result = api!!.request("POST", "users/reset-password", JSONObject().put("usuarioId", user.getInt("id")).put("passwordAdmin", password.text.toString()))
                 dialog.dismiss()
                 val temporary = result.getString("temporal")
-                AlertDialog.Builder(this).setTitle("Clave temporal · 30 minutos").setMessage(temporary)
+                val delivery = if (result.optBoolean("correoEnviado")) {
+                    "También se envió a recuperación por correo."
+                } else {
+                    "Cópiala y entrégala de forma segura."
+                }
+                AlertDialog.Builder(this).setTitle("Clave temporal · 30 minutos").setMessage("$temporary\n\n$delivery")
                     .setPositiveButton("Copiar") { _, _ -> copy(temporary) }.setNegativeButton("Cerrar", null).show()
             }
         } }

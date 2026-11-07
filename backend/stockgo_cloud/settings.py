@@ -14,6 +14,12 @@ class Settings:
     max_overflow: int = 2
     sslrootcert: str = ''
     sslmode: str = 'verify-full'
+    recovery_email: str = ''
+    smtp_host: str = ''
+    smtp_port: int = 587
+    smtp_username: str = ''
+    smtp_password: str = ''
+    smtp_from: str = ''
 
     @classmethod
     def from_env(cls):
@@ -25,6 +31,10 @@ class Settings:
             pool_size=int(os.getenv('DB_POOL_SIZE', '3')), max_overflow=int(os.getenv('DB_MAX_OVERFLOW', '2')),
             sslrootcert=os.getenv('DB_SSLROOTCERT', ''),
             sslmode=os.getenv('DB_SSLMODE', 'verify-full'),
+            recovery_email=os.getenv('RECOVERY_EMAIL', '').strip(),
+            smtp_host=os.getenv('SMTP_HOST', '').strip(), smtp_port=int(os.getenv('SMTP_PORT', '587')),
+            smtp_username=os.getenv('SMTP_USERNAME', '').strip(), smtp_password=os.getenv('SMTP_PASSWORD', ''),
+            smtp_from=os.getenv('SMTP_FROM', '').strip(),
         )
         if settings.environment == 'production':
             if settings.sslmode not in ('verify-full', 'require'):
