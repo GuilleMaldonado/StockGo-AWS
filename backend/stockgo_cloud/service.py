@@ -150,6 +150,10 @@ class Service:
     def provision(self, db, body, key):
         from .domain import normalize
         name, normalized = normalize(text(body, 'negocio'))
+        # Se valida antes de crear el administrador: el nombre identifica de forma
+        # única el negocio y el cliente puede mostrar un aviso comprensible.
+        if db.scalar(select(Business).where(Business.normalized_name == normalized)):
+            raise Error('Ya existe un negocio con ese nombre. Usa otro nombre o inicia sesión como administrador.', 409)
         business = Business(id=secrets.token_hex(16).upper(), name=name, normalized_name=normalized)
         db.add(business); db.flush()
         self.create_user(db, business.id, body, 'administrador')
