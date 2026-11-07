@@ -1,10 +1,15 @@
 # Recuperación por correo
 
-StockGo nunca conserva ni reenvía la contraseña anterior. Cuando se solicita
-recuperación, la API manda al correo de soporte el negocio, usuario y código
-SG1. Después de que un administrador autenticado restablece la cuenta desde
-**Equipo**, se entrega una contraseña temporal nueva que vence en 30 minutos y
-obliga al usuario a elegir otra.
+StockGo nunca conserva ni reenvía la contraseña anterior. Cuando un vendedor
+solicita recuperación, la API manda al correo de soporte el negocio, usuario y
+código SG1. Después de que un administrador autenticado restablece la cuenta
+desde **Equipo**, se entrega una contraseña temporal nueva que vence en 30
+minutos y obliga al usuario a elegir otra.
+
+Un administrador que perdió su contraseña usa **Recuperar contraseña → Soy
+administrador**, ingresa el nombre del negocio y su usuario. La API genera una
+contraseña temporal y la entrega únicamente al correo de recuperación. La
+respuesta de la app es neutra para no revelar si una cuenta existe.
 
 ## Configuración gratuita con Gmail
 

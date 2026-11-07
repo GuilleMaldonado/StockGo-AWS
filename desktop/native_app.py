@@ -163,16 +163,23 @@ class App(tk.Tk):
         win = tk.Toplevel(self); win.title("Recuperar contraseña"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 22); box.pack(fill="both", expand=True)
         ttk.Label(box, text="Solicitar recuperación", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(box, text="El administrador del negocio podrá generar una contraseña temporal.", style="Card.TLabel", wraplength=420).pack(anchor="w", pady=(5, 14))
-        code, user = tk.StringVar(value=self.saved_code()), tk.StringVar()
-        for label, value, secret in (("Código SG1", code, False), ("Usuario", user, False)):
+        ttk.Label(box, text="El vendedor usa SG1. El administrador usa el nombre del negocio; la clave temporal llega al correo de recuperación.", style="Card.TLabel", wraplength=420).pack(anchor="w", pady=(5, 14))
+        code, user, business = tk.StringVar(value=self.saved_code()), tk.StringVar(), tk.StringVar()
+        for label, value, secret in (("Código SG1 (vendedor)", code, False), ("Nombre del negocio (administrador)", business, False), ("Usuario", user, False)):
             ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(7, 1)); ttk.Entry(box, textvariable=value, show="•" if secret else "").pack(fill="x")
-        def send():
+        def send_vendor():
             try:
                 url, business = parse_sg1(code.get()); Api(url, business).call("POST", "auth/recovery-request", {"usuario": user.get().strip()})
                 win.destroy(); messagebox.showinfo("Recuperación", "Solicitud enviada. Contacta al administrador del negocio.", parent=self)
             except ApiError as exc: messagebox.showerror("Recuperación", str(exc), parent=win)
-        ttk.Button(box, text="Enviar solicitud", style="Primary.TButton", command=send).pack(anchor="e", pady=(18, 0))
+        def send_admin():
+            try:
+                Api(DEFAULT_API).call("POST", "auth/admin-recovery-request", {"negocio": business.get().strip(), "usuario": user.get().strip()})
+                win.destroy(); messagebox.showinfo("Recuperación", "Si la cuenta existe, la clave temporal llegará al correo de recuperación.", parent=self)
+            except ApiError as exc: messagebox.showerror("Recuperación", str(exc), parent=win)
+        actions = ttk.Frame(box, style="Card.TFrame"); actions.pack(anchor="e", pady=(18, 0))
+        ttk.Button(actions, text="Soy vendedor", style="Primary.TButton", command=send_vendor).pack(side="left")
+        ttk.Button(actions, text="Soy administrador", command=send_admin).pack(side="left", padx=(8, 0))
     def registration_form(self):
         win = tk.Toplevel(self); win.title("Crear cuenta"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 24); box.pack(fill="both", expand=True); owner = tk.BooleanVar(value=False); fields = {}

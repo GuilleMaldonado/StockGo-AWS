@@ -517,17 +517,27 @@ class MainActivity : ComponentActivity() {
         button(page, "Cambiar de negocio", navy) { api = null; login() }
     }
     private fun recovery() {
-        reset("Recuperar contraseña", "Solicita ayuda al administrador del negocio", "recovery")
-        val box = section(title = "Solicitar recuperación", subtitle = "Por seguridad no confirmamos si una cuenta existe. El administrador genera una clave temporal.")
+        reset("Recuperar contraseña", "Vendedor o administrador", "recovery")
+        val box = section(title = "Solicitar recuperación", subtitle = "El vendedor usa SG1. El administrador usa el nombre del negocio; la clave temporal se envía al correo de recuperación.")
         val code = field(box, "Código completo SG1", getSharedPreferences("stockgo", MODE_PRIVATE).getString("codigo", "").orEmpty())
         code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         val username = field(box, "Usuario")
-        button(box, "Enviar solicitud", green) {
+        val business = field(box, "Nombre del negocio (solo administrador)")
+        button(box, "Soy vendedor · enviar solicitud", green) {
             action {
                 val client = Api(BusinessCode.parse(code.text.toString()))
                 client.request("POST", "auth/recovery-request", JSONObject().put("usuario", username.text.toString().trim()))
                 getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", code.text.toString().trim()).apply()
                 message("Solicitud enviada. Contacta al administrador para recibir una clave temporal.")
+                login()
+            }
+        }
+        button(box, "Soy administrador · enviar a correo", navy) {
+            action {
+                val client = Api(BusinessCode(CLOUD_API_URL, "0".repeat(32), false))
+                client.request("POST", "auth/admin-recovery-request", JSONObject()
+                    .put("negocio", business.text.toString().trim()).put("usuario", username.text.toString().trim()))
+                message("Si la cuenta existe, la clave temporal llegará al correo de recuperación.")
                 login()
             }
         }

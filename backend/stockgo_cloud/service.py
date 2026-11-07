@@ -117,8 +117,18 @@ class Service:
             lines += ['', 'Se solicitó recuperación. Confirma la identidad y restablece la contraseña desde Equipo.']
         return '\n'.join(lines)
 
+    def make_temporary_password(self, db, business, target):
+        temporary = 'SG-' + secrets.token_urlsafe(18)
+        target.password_hash, target.salt = password_fields(temporary)
+        target.versionCredencial += 1
+        target.requiereCambioPassword = True
+        target.temporalHasta = utcnow() + timedelta(minutes=30)
+        db.execute(delete(AuthSession).where(AuthSession.business_id == business.id, AuthSession.user_id == target.id))
+        self.notify(db, business.id, 'credentials', target.id)
+        return temporary
+
     def limit(self, ip, route):
-        sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/user-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
+        sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/user-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'auth/admin-recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
         if route not in sensitive:
             return
         instant = utcnow()
@@ -130,7 +140,7 @@ class Service:
         with self.factory.begin() as db:
             statement = insert(RateLimit).values(key=key, hits=1, expires_at=instant + timedelta(minutes=minutes * 2))
             hits = db.scalar(statement.on_conflict_do_update(index_elements=[RateLimit.key], set_={'hits': RateLimit.hits + 1}).returning(RateLimit.hits))
-            if hits > (3 if route == 'businesses' else 10):
+            if hits > (3 if route in ('businesses', 'auth/admin-recovery-request') else 10):
                 raise Error('Demasiados intentos. Espera antes de volver a intentar.', 429)
 
     def authenticate(self, db, code, token, allow_change=False):
@@ -335,6 +345,24 @@ class Service:
             result = self.issue(db, business, user)
             result.update({'nombreNegocio': business.name, 'sg1': sg1(self.settings.api_public_url, business.id)})
             return 200, result, ''
+        # El administrador no necesita recordar SG1 para recuperar su propia
+        # cuenta. La respuesta sigue siendo neutra para no enumerar usuarios.
+        if route == 'auth/admin-recovery-request' and method == 'POST':
+            from .domain import normalize
+            _, normalized = normalize(text(body, 'negocio'))
+            username = text(body, 'usuario').strip().lower()
+            business = db.scalar(select(Business).where(Business.normalized_name == normalized))
+            target = db.scalar(select(User).where(User.business_id == business.id, User.nombre == username,
+                                                    User.rol == 'administrador')) if business else None
+            if target:
+                temporary = self.make_temporary_password(db, business, target)
+                db.add(Audit(business_id=business.id, actorId=0, actor='Recuperación por correo',
+                             objetivoId=target.id, objetivo=target.nombre, accion='restablecer_admin_correo'))
+                self.send_recovery_email(
+                    'StockGo: contraseña temporal de administrador',
+                    self.recovery_message(business, target, temporary),
+                )
+            return 202, {'ok': True, 'mensaje': 'Si la cuenta existe, se enviará una clave temporal al correo de recuperación.'}, ''
         business = db.get(Business, code)
         if not business:
             raise Error('Código de negocio incorrecto.', 403)
@@ -429,13 +457,8 @@ class Service:
                     raise Error('La cuenta no pertenece a este negocio.', 404)
                 if user.versionCredencial != session.credential_version:
                     raise Error('Tu acceso cambió.', 401)
-                temporary = 'SG-' + secrets.token_urlsafe(18)
-                target.password_hash, target.salt = password_fields(temporary)
-                target.versionCredencial += 1; target.requiereCambioPassword = True
-                target.temporalHasta = utcnow() + timedelta(minutes=30)
-                db.execute(delete(AuthSession).where(AuthSession.business_id == code, AuthSession.user_id == target.id))
+                temporary = self.make_temporary_password(db, business, target)
                 self.audit(db, code, user, target.id, target.nombre, 'restablecer_password')
-                self.notify(db, code, 'credentials', target.id)
                 mailed = self.send_recovery_email(
                     'StockGo: contraseña temporal', self.recovery_message(business, target, temporary)
                 )
