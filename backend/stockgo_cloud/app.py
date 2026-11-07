@@ -100,7 +100,7 @@ def create_app(settings=None, engine=None, factory=None):
                     if method not in ('GET', 'POST', 'PUT') or not isinstance(path, str) or len(path) > 2048 or not isinstance(body, dict):
                         await send({'type': 'response', 'id': request_id, 'status': 400, 'data': {'error': 'Solicitud inválida.'}}); continue
                     # Aprovisionamiento y login se hacen en HTTPS antes de abrir el canal.
-                    if path.split('?')[0].strip('/') in ('businesses', 'auth/login', 'auth/admin-login', 'auth/guest', 'auth/register', 'connect'):
+                    if path.split('?')[0].strip('/') in ('businesses', 'auth/login', 'auth/admin-login', 'auth/user-login', 'auth/guest', 'auth/register', 'connect'):
                         await send({'type': 'response', 'id': request_id, 'status': 403, 'data': {'error': 'Ruta no disponible en esta sesión.'}}); continue
                     try:
                         status, data, etag = await run_in_threadpool(service.handle, method, path, body, auth['codigo'], auth['token'], ip, '', frame.get('etag', ''))

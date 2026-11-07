@@ -76,7 +76,7 @@ class Service:
         self.settings = settings
 
     def limit(self, ip, route):
-        sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
+        sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/user-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
         if route not in sensitive:
             return
         instant = utcnow()
@@ -140,6 +140,10 @@ class Service:
         username, password, first, last = identity(data)
         if role not in ('administrador', 'vendedor'):
             raise Error('Selecciona Administrador o Vendedor. El invitado entra sin cuenta.')
+        # El nombre de usuario es global: permite que un vendedor inicie sesión
+        # desde Android sin volver a pegar el código SG1 de su negocio.
+        if db.scalar(select(User).where(User.nombre == username)):
+            raise Error('Ese usuario ya existe. Elige otro usuario.', 409)
         digest, salt = password_fields(password)
         user = User(business_id=code, nombre=username, password_hash=digest, salt=salt, rol=role,
                     nombres=first, apellidos=last, codigoInterno=('AD-' if role == 'administrador' else 'VD-') + secrets.token_hex(5).upper())
@@ -271,6 +275,19 @@ class Service:
             user = db.scalar(select(User).where(User.business_id == business.id, User.nombre == username, User.rol == 'administrador')) if business else None
             if not user or not matches(text(body, 'password'), row_password(user)):
                 raise Error('Negocio, usuario o contraseña incorrectos.', 401)
+            if user.requiereCambioPassword and (not user.temporalHasta or user.temporalHasta <= utcnow()):
+                raise Error('La contraseña temporal venció.', 401)
+            result = self.issue(db, business, user)
+            result.update({'nombreNegocio': business.name, 'sg1': sg1(self.settings.api_public_url, business.id)})
+            return 200, result, ''
+        if route == 'auth/user-login' and method == 'POST':
+            from .domain import sg1
+            username = text(body, 'usuario').strip().lower()
+            users = list(db.scalars(select(User).where(User.nombre == username).limit(2)))
+            user = users[0] if len(users) == 1 and users[0].rol == 'vendedor' else None
+            business = db.get(Business, user.business_id) if user else None
+            if not user or not business or not matches(text(body, 'password'), row_password(user)):
+                raise Error('Usuario o contraseña incorrectos.', 401)
             if user.requiereCambioPassword and (not user.temporalHasta or user.temporalHasta <= utcnow()):
                 raise Error('La contraseña temporal venció.', 401)
             result = self.issue(db, business, user)

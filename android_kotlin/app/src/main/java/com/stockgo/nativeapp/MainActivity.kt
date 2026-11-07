@@ -363,26 +363,17 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("stockgo", MODE_PRIVATE)
         val hero = gradientSection(page, "Menos pendientes.\nMás control.", "Todo tu inventario en un solo lugar, simple, ordenado y siempre contigo.")
         listOf("✓  Productos organizados", "✓  Acceso según tu rol", "✓  Información protegida en la nube").forEach { hero.addView(text(it, 14f).apply { setTextColor(Color.WHITE) }) }
-        val box = section(title = "Bienvenido de nuevo", subtitle = "El administrador entra con su negocio. El vendedor vincula SG1 solo la primera vez.")
+        val box = section(title = "Bienvenido de nuevo", subtitle = "El administrador entra con su negocio. El vendedor entra solo con su usuario y contraseña.")
         val roles = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val administrator = RadioButton(this).apply { id = View.generateViewId(); text = "Administrador"; isChecked = true }
         val seller = RadioButton(this).apply { id = View.generateViewId(); text = "Vendedor" }
         roles.addView(administrator, LinearLayout.LayoutParams(0, -2, 1f)); roles.addView(seller, LinearLayout.LayoutParams(0, -2, 1f)); box.addView(roles)
         val businessArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; box.addView(businessArea)
         val business = field(businessArea, "Nombre del negocio")
-        val codeArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; box.addView(codeArea)
-        val savedCode = preferences.getString("codigo", "").orEmpty()
-        val code = field(codeArea, "Código completo SG1", savedCode)
-        code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         val username = field(box, "Usuario")
         val password = field(box, "Contraseña", password = true)
-        val codeHint = text("El código SG1 vincula a un vendedor con el negocio. Se guardará en este dispositivo después del primer acceso.", 13f).apply { setTextColor(Color.rgb(84, 112, 132)) }
-        box.addView(codeHint)
         fun updateRole() {
-            val adminLogin = administrator.isChecked
-            businessArea.visibility = if (adminLogin) View.VISIBLE else View.GONE
-            codeArea.visibility = if (!adminLogin && savedCode.isBlank()) View.VISIBLE else View.GONE
-            codeHint.visibility = if (adminLogin) View.GONE else View.VISIBLE
+            businessArea.visibility = if (administrator.isChecked) View.VISIBLE else View.GONE
         }
         roles.setOnCheckedChangeListener { _, _ -> updateRole() }; updateRole()
         button(box, "Iniciar sesión  →") {
@@ -396,25 +387,31 @@ class MainActivity : ComponentActivity() {
                     }
                     preferences.edit().putString("codigo", sg1).apply(); api = client
                 } else {
-                    val rawCode = if (codeArea.visibility == View.VISIBLE) code.text.toString() else savedCode
-                    val client = Api(BusinessCode.parse(rawCode)); client.connect(); client.login(username.text.toString().trim(), password.text.toString())
-                    preferences.edit().putString("codigo", rawCode.trim()).apply(); api = client
+                    val bootstrap = Api(BusinessCode(CLOUD_API_URL, "00000000000000000000000000000000", false))
+                    val result = bootstrap.request("POST", "auth/user-login", JSONObject().put("usuario", username.text.toString().trim()).put("password", password.text.toString()))
+                    val sg1 = result.getString("sg1")
+                    val client = Api(BusinessCode.parse(sg1)).apply {
+                        token = result.getString("token"); user = result.getJSONObject("usuario"); name = result.getString("nombreNegocio")
+                    }
+                    preferences.edit().putString("codigo", sg1).apply(); api = client
                 }
                 afterLogin()
             }
         }
         button(box, "Continuar como invitado", green) {
-            action {
-                val rawCode = if (codeArea.visibility == View.VISIBLE) code.text.toString() else savedCode
-                val client = Api(BusinessCode.parse(rawCode))
-                client.connect(); api = client
-                preferences.edit().putString("codigo", rawCode.trim()).apply()
-                client.login("", "", true); afterLogin()
-            }
+            guestLogin()
         }
         page.addView(text("Los datos y permisos se guardan en StockGo Cloud. Tu teléfono nunca funciona como servidor.", 14f))
         button(page, "Recuperar contraseña", navy) { recovery() }
         button(page, "¿Nuevo por aquí? Crear cuenta", navy) { registration() }
+    }
+
+    private fun guestLogin() {
+        val code = EditText(this).apply { hint = "Código completo SG1"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE }
+        AlertDialog.Builder(this).setTitle("Entrar como invitado").setMessage("El acceso de invitado necesita el código SG1 del negocio.")
+            .setView(code).setNegativeButton("Cancelar", null).setPositiveButton("Entrar") { _, _ -> action {
+                val client = Api(BusinessCode.parse(code.text.toString())); client.connect(); client.login("", "", true); api = client; afterLogin()
+            } }.show()
     }
 
     /** Mismo flujo de la versión StockGo original, ahora respaldado por Render. */
@@ -719,6 +716,11 @@ class MainActivity : ComponentActivity() {
     private fun showProductDetail(p: JSONObject) {
         reset(p.getString("nombre"), p.getString("codigo"), "detail")
         val box = section(title = "Ficha de ${p.optString("categoria").lowercase()}", subtitle = "Precio ${money(price(p))} · Disponible ${p.getInt("cantidad")}")
+        if (!p.isNull("imagen")) {
+            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = "Imagen del producto" }
+            box.addView(image, LinearLayout.LayoutParams(-1, dp(190)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            showImage(image, p.getString("imagen"))
+        }
         ProductFields.fields(p.optString("categoria"), p.optString("tipo")).forEach {
             if (it.key != "proveedor" || api!!.admin) {
                 val value = p.optString(it.key)

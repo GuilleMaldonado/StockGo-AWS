@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageTk
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "StockGo" / "escritorio.json"
 # Dirección comprobada del servicio central en Render. Puede sobrescribirse para
 # pruebas con STOCKGO_API_URL, pero los usuarios finales no deben escribirla.
@@ -34,6 +34,17 @@ def webp_image(path):
             return base64.b64encode(output.getvalue()).decode(), output.tell()
     except ApiError: raise
     except Exception as exc: raise ApiError("No se pudo convertir la imagen a WebP.") from exc
+def product_photo(encoded, size=(72, 72)):
+    """Convierte la miniatura base64 de la API en una imagen visible para Tk."""
+    if not encoded: return None
+    try:
+        with Image.open(BytesIO(base64.b64decode(encoded))) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail(size, Image.Resampling.LANCZOS)
+            canvas = Image.new("RGB", size, "white")
+            canvas.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
+            return ImageTk.PhotoImage(canvas)
+    except Exception: return None
 def parse_sg1(value):
     if not value.strip().startswith("SG1-"): raise ApiError("El código debe iniciar con SG1-.")
     try:
@@ -76,6 +87,7 @@ class App(tk.Tk):
         style.map("Nav.TButton", background=[("active", "#1B5272")])
         style.configure("Treeview", rowheight=31, background=WHITE, fieldbackground=WHITE, foreground=NAVY)
         style.configure("Treeview.Heading", background="#E4F1F7", foreground=NAVY, font=("Segoe UI Semibold", 10))
+        style.configure("Product.Treeview", rowheight=76, background=WHITE, fieldbackground=WHITE, foreground=NAVY)
     def clear(self):
         for child in self.winfo_children(): child.destroy()
     def card(self, parent, padding=24): return ttk.Frame(parent, style="Card.TFrame", padding=padding)
@@ -256,22 +268,38 @@ class App(tk.Tk):
         self.page("Inventario", "Consulta existencias y encuentra productos por nombre o código.")
         tools = ttk.Frame(self.content); tools.pack(fill="x", pady=(0, 12)); search = tk.StringVar()
         ttk.Entry(tools, textvariable=search, width=42).pack(side="left")
-        tree = ttk.Treeview(self.content, columns=("sku", "category", "stock", "price"), show="tree headings")
-        tree.heading("#0", text="Producto"); tree.column("#0", width=300)
+        tree = ttk.Treeview(self.content, columns=("sku", "category", "stock", "price"), show="tree headings", style="Product.Treeview")
+        tree.heading("#0", text="Producto", anchor="center"); tree.column("#0", width=300, anchor="center")
         for key, title, width in (("sku", "Código", 150), ("category", "Categoría", 130), ("stock", "Stock", 80), ("price", "Precio venta", 120)):
-            tree.heading(key, text=title); tree.column(key, width=width)
+            tree.heading(key, text=title, anchor="center"); tree.column(key, width=width, anchor="center")
         tree.pack(fill="both", expand=True)
+        preview = self.card(self.content, 14); preview.pack(fill="x", pady=(14, 0))
+        ttk.Label(preview, text="Vista previa del producto", style="Card.TLabel", font=("Segoe UI Semibold", 12)).pack(anchor="center")
+        preview_image = tk.Label(preview, text="Selecciona un producto para ver su imagen", bg=WHITE, fg=MUTED, pady=8)
+        preview_image.pack(anchor="center")
+        self.product_image_refs = []
         def load():
             try:
                 q = search.get().strip(); suffix = "&q=" + q.replace(" ", "%20") if q else ""
                 self.products = self.api.call("GET", "products?limit=100" + suffix)["productos"]; tree.delete(*tree.get_children())
-                for p in self.products: tree.insert("", "end", iid=str(p["id"]), text=p["nombre"], values=(p["codigo"], p["categoria"], p["cantidad"], f"Q {p['precio']:,.2f}"))
+                self.product_image_refs.clear()
+                for p in self.products:
+                    thumbnail = product_photo(p.get("imagen")); self.product_image_refs.append(thumbnail)
+                    tree.insert("", "end", iid=str(p["id"]), text=p["nombre"], image=thumbnail, values=(p["codigo"], p["categoria"], p["cantidad"], f"Q {p['precio']:,.2f}"))
             except ApiError as exc: messagebox.showerror("Inventario", str(exc), parent=self)
+        def show_preview(_=None):
+            selected = tree.selection()
+            item = next((p for p in self.products if selected and str(p["id"]) == selected[0]), None)
+            image = product_photo(item.get("imagen"), (180, 180)) if item else None
+            self.product_preview_ref = image
+            if image: preview_image.configure(image=image, text="")
+            else: preview_image.configure(image="", text="Este producto no tiene imagen")
         ttk.Button(tools, text="Buscar", style="Primary.TButton", command=load).pack(side="left", padx=8)
         if self.user.get("rol") == "administrador":
             ttk.Button(tools, text="Agregar producto", command=lambda: self.product_form(None, load)).pack(side="right")
             ttk.Button(tools, text="Editar seleccionado", command=lambda: self.edit_product(tree, load)).pack(side="right", padx=8)
             ttk.Button(tools, text="Desactivar / eliminar", command=lambda: self.deactivate_product(tree, load)).pack(side="right", padx=8)
+        tree.bind("<<TreeviewSelect>>", show_preview)
         tree.bind("<Double-1>", lambda _: self.edit_product(tree, load) if self.user.get("rol") == "administrador" else None); load()
     def edit_product(self, tree, after):
         selected = tree.selection()
