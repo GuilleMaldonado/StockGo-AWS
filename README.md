@@ -8,7 +8,16 @@ Navegador web ─┼─ HTTPS / WSS ─> API Python (backend/) ─> PostgreSQL p
 Escritorio web ─┘
 ```
 
-Los teléfonos, navegadores y PC son clientes. **No alojan el servidor ni se conectan a PostgreSQL.** La única API que consumen es la URL HTTPS incluida en el código SG1 del negocio.
+Los teléfonos y PC son clientes. **No alojan el servidor ni se conectan a PostgreSQL.** La única API que consumen es la URL HTTPS incluida en el código SG1 del negocio.
+
+## Flujo de uso
+
+1. Cualquier persona abre StockGo y pulsa **Crear nuevo negocio**.
+2. Completa el nombre único del negocio y los datos del administrador. StockGo Cloud crea el negocio inmediatamente y muestra su código **SG1**.
+3. El administrador guarda el SG1 e inicia sesión. Dentro de la aplicación puede abrir **Invitar al negocio** para volver a ver y copiar el mismo código.
+4. El vendedor pega ese SG1 en su aplicación, pulsa **Crear mi cuenta de vendedor**, registra sus datos y luego inicia sesión con su propia cuenta.
+
+El SG1 identifica el negocio en la nube; no es una contraseña y no concede permisos de administrador.
 
 ## Carpetas
 

@@ -127,18 +127,18 @@ class App(tk.Tk):
             url, business = parse_sg1(self.sg_value.get())
         except ApiError:
             return messagebox.showerror("Solicitud de vendedor", "Primero pega el código SG1 del negocio.", parent=self)
-        win = tk.Toplevel(self); win.title("Solicitar cuenta de vendedor"); win.configure(bg=BG); win.transient(self); win.grab_set()
+        win = tk.Toplevel(self); win.title("Crear cuenta de vendedor"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 20); box.pack(fill="both", expand=True); fields = {}
-        ttk.Label(box, text="El administrador del negocio aprobará tu solicitud.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
+        ttk.Label(box, text="Tu cuenta quedará vinculada a este negocio. El código SG1 no concede permisos de administrador.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
         for label, key, secret in (("Usuario", "usuario", False), ("Nombres", "nombres", False), ("Apellidos", "apellidos", False), ("Contraseña", "password", True)):
             ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(6, 1))
             field = ttk.Entry(box, show="•" if secret else ""); field.pack(fill="x"); fields[key] = field
         def send():
             try:
-                reply = Api(url, business).call("POST", "vendor-requests", {name: field.get().strip() for name, field in fields.items()})
-                win.destroy(); messagebox.showinfo("Solicitud enviada", reply["mensaje"], parent=self)
-            except ApiError as exc: messagebox.showerror("Solicitud de vendedor", str(exc), parent=win)
-        ttk.Button(box, text="Enviar solicitud", style="Primary.TButton", command=send).pack(anchor="e", pady=14)
+                Api(url, business).call("POST", "auth/register", {name: field.get().strip() for name, field in fields.items()})
+                win.destroy(); messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
+            except ApiError as exc: messagebox.showerror("Crear cuenta de vendedor", str(exc), parent=win)
+        ttk.Button(box, text="Crear cuenta", style="Primary.TButton", command=send).pack(anchor="e", pady=14)
     def login_screen(self, business):
         self.clear()
         root = ttk.Frame(self, padding=55); root.pack(fill="both", expand=True)
@@ -156,6 +156,7 @@ class App(tk.Tk):
         buttons = ttk.Frame(box, style="Card.TFrame"); buttons.pack(fill="x", pady=(22, 0))
         ttk.Button(buttons, text="Ingresar", style="Primary.TButton", command=enter).pack(side="left")
         ttk.Button(buttons, text="Entrar como invitado", command=lambda: enter(True)).pack(side="left", padx=9)
+        ttk.Button(box, text="Crear mi cuenta de vendedor", command=self.vendor_form).pack(anchor="w", pady=(14, 0))
         ttk.Button(box, text="Cambiar negocio", command=self.connect_screen).pack(anchor="w", pady=(16, 0))
     def main_screen(self, business):
         self.clear(); self.cart = []
@@ -187,6 +188,14 @@ class App(tk.Tk):
                 card = tk.Frame(row, bg=WHITE, highlightbackground="#DCE8EF", highlightthickness=1, padx=18, pady=18); card.pack(side="left", fill="both", expand=True, padx=(0, 12))
                 tk.Label(card, text=label, bg=WHITE, fg=MUTED).pack(anchor="w")
                 tk.Label(card, text=str(value), bg=WHITE, fg=color, font=("Segoe UI Semibold", 20)).pack(anchor="w", pady=(8, 0))
+            if self.user.get("rol") == "administrador":
+                invite = self.card(self.content, 18); invite.pack(fill="x", pady=(20, 0))
+                ttk.Label(invite, text="Código SG1 para vendedores", style="Card.TLabel", font=("Segoe UI Semibold", 14)).pack(anchor="w")
+                ttk.Label(invite, text="Compártelo con tu equipo. Cada vendedor crea su propia cuenta; el código no da permisos de administrador.", style="Card.TLabel").pack(anchor="w", pady=(3, 8))
+                code = "SG1-" + base64.urlsafe_b64encode(json.dumps({"url": self.api.url, "negocio": self.api.code}, separators=(",", ":")).encode()).decode().rstrip("=")
+                value = tk.StringVar(value=code)
+                field = ttk.Entry(invite, textvariable=value, font=("Consolas", 9)); field.pack(fill="x")
+                ttk.Button(invite, text="Copiar código", command=lambda: (self.clipboard_clear(), self.clipboard_append(code), messagebox.showinfo("StockGo", "Código SG1 copiado.", parent=self))).pack(anchor="e", pady=(8, 0))
         except ApiError as exc: self.error(exc)
     def inventory(self):
         self.page("Inventario", "Consulta existencias y encuentra productos por nombre o código.")

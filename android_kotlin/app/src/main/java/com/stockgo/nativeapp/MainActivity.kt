@@ -34,8 +34,13 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
 
-/** Cliente Android nativo. La autoridad y SQLite permanecen en la PC Python. */
+/** Cliente Android nativo. La autoridad es la API central de StockGo Cloud. */
 class MainActivity : ComponentActivity() {
+    companion object {
+        // Los usuarios no escriben ni administran esta dirección. El SG1 identifica
+        // el negocio y contiene esta misma URL de la nube.
+        private const val CLOUD_API_URL = "https://stockgo-api-demo.onrender.com"
+    }
     private val blue = Color.rgb(0, 115, 177)
     private val navy = Color.rgb(18, 59, 86)
     private val pale = Color.rgb(242, 248, 252)
@@ -320,31 +325,26 @@ class MainActivity : ComponentActivity() {
                 credentials()
             }
         }
-        page.addView(text("Sin Firebase. Los datos y los permisos se administran en el servidor de tu negocio.", 14f))
+        page.addView(text("Los datos y permisos se guardan en StockGo Cloud. Tu teléfono nunca funciona como servidor.", 14f))
         button(page, "Recuperar contraseña", navy) { recovery() }
         button(page, "Crear nuevo negocio", navy) { createBusiness() }
     }
     private fun createBusiness() {
-        reset("Crear negocio", "Se registrará en la API central; este teléfono no será servidor.", "business")
+        reset("Crear negocio", "Registra tu negocio en StockGo Cloud y recibe su código SG1.", "business")
         val box = section(title = "Datos del administrador inicial")
-        val apiUrl = field(box, "URL HTTPS de la API", "https://api.tu-dominio.example")
-        apiUrl.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         val business = field(box, "Nombre único del negocio")
         val first = field(box, "Nombres")
         val last = field(box, "Apellidos")
         val user = field(box, "Usuario (sin números)")
         val password = field(box, "Contraseña (8 a 128 caracteres)", password = true)
         val confirm = field(box, "Repite la contraseña", password = true)
-        val key = field(box, "Clave de aprovisionamiento", password = true)
         button(box, "Crear negocio y conectar", green) {
             action {
                 require(password.text.toString() == confirm.text.toString()) { "Las contraseñas no coinciden." }
-                val uri = HostPolicy.validate(apiUrl.text.toString(), false)
-                val base = uri.toString().trimEnd('/')
-                val bootstrap = Api(BusinessCode(base, "00000000000000000000000000000000", false))
+                val bootstrap = Api(BusinessCode(CLOUD_API_URL, "00000000000000000000000000000000", false))
                 val payload = JSONObject().put("negocio", business.text.toString()).put("nombres", first.text.toString())
                     .put("apellidos", last.text.toString()).put("usuario", user.text.toString()).put("password", password.text.toString())
-                val result = bootstrap.request("POST", "businesses", payload, key.text.toString())
+                val result = bootstrap.request("POST", "businesses", payload)
                 val sg1 = result.getString("sg1")
                 getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", sg1).apply()
                 api = Api(BusinessCode.parse(sg1)); api!!.connect()
@@ -372,7 +372,7 @@ class MainActivity : ComponentActivity() {
         button(box, "Iniciar sesión →") {
             action { api!!.login(username.text.toString().trim(), password.text.toString()); afterLogin() }
         }
-        button(box, "Crear cuenta de vendedor", navy) { register() }
+        button(box, "Crear mi cuenta de vendedor", navy) { register() }
         button(box, "Continuar como invitado", green) { action { api!!.login("", "", true); afterLogin() } }
         button(page, "Recuperar contraseña", navy) { recovery() }
         button(page, "Cambiar de negocio", navy) { api = null; login() }
@@ -477,6 +477,9 @@ class MainActivity : ComponentActivity() {
             button(box, "＋  Nueva venta / cuenta", green) { inventory() }
             button(box, "▤  Ver cuenta (${cart.size} productos)") { cartScreen() }
             button(box, "▥  Historial y estadísticas", navy) { reports() }
+        }
+        if (api!!.admin) {
+            button(box, "⌁  Compartir código SG1 con vendedores", navy) { invite() }
         }
         if (api!!.admin) {
             val teamBox = section(title = "Administra tu equipo")
