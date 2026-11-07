@@ -79,9 +79,7 @@ class App(tk.Tk):
         field = ttk.Entry(box, textvariable=self.sg_value, font=("Consolas", 10)); field.pack(fill="x", pady=(4, 15)); field.focus()
         line = ttk.Frame(box, style="Card.TFrame"); line.pack(fill="x")
         ttk.Button(line, text="Conectar", style="Primary.TButton", command=self.connect).pack(side="left")
-        ttk.Button(line, text="Solicitar negocio", command=self.business_form).pack(side="left", padx=10)
-        ttk.Button(line, text="Solicitar cuenta de vendedor", command=self.vendor_form).pack(side="left")
-        ttk.Button(line, text="Aprobar negocios", command=self.platform_requests).pack(side="right")
+        ttk.Button(line, text="Crear negocio", command=self.business_form).pack(side="left", padx=10)
         ttk.Label(root, text="Aplicación nativa: no abre navegador y no ejecuta un servidor local.", foreground=MUTED).pack(anchor="w")
     def connect(self):
         try:
@@ -89,20 +87,21 @@ class App(tk.Tk):
             reply = self.api.call("POST", "connect", {"codigo": code}); self.remember(self.sg_value.get().strip()); self.login_screen(reply["nombreNegocio"])
         except ApiError as exc: messagebox.showerror("Conexión", str(exc), parent=self)
     def business_form(self):
-        win = tk.Toplevel(self); win.title("Solicitar negocio"); win.configure(bg=BG); win.transient(self); win.grab_set()
+        win = tk.Toplevel(self); win.title("Crear negocio"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 22); box.pack(fill="both", expand=True); values = {}
-        ttk.Label(box, text="La solicitud será revisada por el responsable de StockGo.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
+        ttk.Label(box, text="El negocio se creará directamente en StockGo Cloud.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
         for label, key, secret in (("Nombre de negocio", "negocio", False), ("Usuario administrador", "usuario", False), ("Nombres", "nombres", False), ("Apellidos", "apellidos", False), ("Contraseña", "password", True)):
             ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(7, 1))
             item = ttk.Entry(box, width=48, show="•" if secret else ""); item.pack(fill="x"); values[key] = item
         def create():
             try:
                 body = {key: values[key].get().strip() for key in ("negocio", "usuario", "nombres", "apellidos", "password")}
-                reply = Api(DEFAULT_API).call("POST", "business-requests", body)
-                win.destroy()
-                messagebox.showinfo("Solicitud enviada", reply["mensaje"] + "\n\nEl responsable aprobará el negocio y entregará el código SG1.", parent=self)
+                reply = Api(DEFAULT_API).call("POST", "businesses", body)
+                self.sg_value.set(reply["sg1"]); win.destroy()
+                messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self)
+                self.connect()
             except ApiError as exc: messagebox.showerror("Crear negocio", str(exc), parent=win)
-        ttk.Button(box, text="Enviar solicitud", style="Primary.TButton", command=create).pack(anchor="e", pady=(15, 0))
+        ttk.Button(box, text="Crear y conectar", style="Primary.TButton", command=create).pack(anchor="e", pady=(15, 0))
     def platform_requests(self):
         key = simpledialog.askstring("Aprobar negocios", "Clave maestra de plataforma:", show="•", parent=self)
         if not key: return
@@ -311,9 +310,7 @@ class App(tk.Tk):
                 try: self.api.call("POST", "users", {key: field.get().strip() for key, field in fields.items()}); win.destroy(); load()
                 except ApiError as exc: messagebox.showerror("Equipo", str(exc), parent=win)
             ttk.Button(box, text="Agregar", style="Primary.TButton", command=save).pack(anchor="e", pady=14)
-        buttons = ttk.Frame(self.content); buttons.pack(anchor="e", pady=12)
-        ttk.Button(buttons, text="Solicitudes de vendedores", command=self.vendor_requests).pack(side="left", padx=8)
-        ttk.Button(buttons, text="Agregar vendedor", style="Primary.TButton", command=add).pack(side="left")
+        ttk.Button(self.content, text="Agregar vendedor", style="Primary.TButton", command=add).pack(anchor="e", pady=12)
         load()
     def vendor_requests(self):
         try:

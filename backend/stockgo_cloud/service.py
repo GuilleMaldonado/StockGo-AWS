@@ -148,8 +148,6 @@ class Service:
         return user
 
     def provision(self, db, body, key):
-        if not self.settings.provisioning_key or not secrets.compare_digest(key.encode(), self.settings.provisioning_key.encode()):
-            raise Error('La creación de negocios requiere la clave de aprovisionamiento del responsable del servicio.', 403)
         from .domain import normalize
         name, normalized = normalize(text(body, 'negocio'))
         business = Business(id=secrets.token_hex(16).upper(), name=name, normalized_name=normalized)
