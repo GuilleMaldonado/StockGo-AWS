@@ -14,7 +14,7 @@ from PIL import Image, ImageOps, ImageTk
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "StockGo" / "escritorio.json"
 # Dirección comprobada del servicio central en Render. Puede sobrescribirse para
 # pruebas con STOCKGO_API_URL, pero los usuarios finales no deben escribirla.
-DEFAULT_API = os.environ.get("STOCKGO_API_URL", "https://stockgo-api-demo.onrender.com").rstrip("/")
+DEFAULT_API = os.environ.get("STOCKGO_API_URL", "https://stockgo-api-guille-618.onrender.com").rstrip("/")
 BG, WHITE, NAVY, BLUE, TEAL, MUTED, RED = "#F3F8FC", "#FFFFFF", "#10334B", "#087FC1", "#0FA6C9", "#587086", "#C84343"
 class ApiError(Exception): pass
 def money(value): return f"Q {float(value) / 100:,.2f}"
