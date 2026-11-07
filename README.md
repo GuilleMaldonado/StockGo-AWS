@@ -1,21 +1,21 @@
 # StockGo Cloud · Android Kotlin + Python
 
-StockGo quedó separado para despliegue web centralizado:
+StockGo está separado para un despliegue centralizado en la nube:
 
 ```text
 Android Kotlin ─┐
-Navegador web ─┼─ HTTPS / WSS ─> API Python (backend/) ─> PostgreSQL privada
-Escritorio web ─┘
+Escritorio Python ─┼─ HTTPS / WSS ─> API Python (backend/) ─> PostgreSQL privada
+                    └─ Render
 ```
 
 Los teléfonos y PC son clientes. **No alojan el servidor ni se conectan a PostgreSQL.** La única API que consumen es la URL HTTPS incluida en el código SG1 del negocio.
 
 ## Flujo de uso
 
-1. Cualquier persona abre StockGo y pulsa **Crear nuevo negocio**.
+1. Cualquier persona abre StockGo y pulsa **¿Nuevo por aquí? Crear cuenta**.
 2. Completa el nombre único del negocio y los datos del administrador. StockGo Cloud crea el negocio inmediatamente y muestra su código **SG1**.
 3. El administrador guarda el SG1 e inicia sesión. Dentro de la aplicación puede abrir **Invitar al negocio** para volver a ver y copiar el mismo código.
-4. El vendedor pega ese SG1 en su aplicación, pulsa **Crear mi cuenta de vendedor**, registra sus datos y luego inicia sesión con su propia cuenta.
+4. El vendedor abre **Crear cuenta**, selecciona **Soy vendedor**, pega el SG1, registra sus datos y luego inicia sesión con su propia cuenta.
 
 El SG1 identifica el negocio en la nube; no es una contraseña y no concede permisos de administrador.
 
@@ -24,15 +24,13 @@ El SG1 identifica el negocio en la nube; no es una contraseña y no concede perm
 | Carpeta | Responsabilidad |
 |---|---|
 | `backend/` | API FastAPI, WebSocket, reglas, migraciones y PostgreSQL. Se despliega en la nube. |
-| `frontend_web/` | Sitio estático HTML/CSS/JS. Solo contiene una URL pública de API. |
 | `android_kotlin/` | Cliente Android nativo, sin credenciales de servidor. |
-| `desktop/` | Lanzador que abre el sitio web HTTPS, no un servidor. |
+| `desktop/` | Aplicación nativa Python para Windows; nunca inicia un servidor local. |
 | `scripts/` | Utilidades de desarrollo, pruebas y compilación. |
 
 ## Variables de entorno
 
-- Copia [backend/.env.example](backend/.env.example) para el backend. `DATABASE_URL` y `PROVISIONING_KEY` son secretos: van solamente en la nube.
-- Copia [frontend_web/.env.example](frontend_web/.env.example) para compilar el sitio. `STOCKGO_API_URL` es pública y puede terminar dentro de `config.js`; no coloques secretos allí.
+- Copia [backend/.env.example](backend/.env.example) para el backend. `DATABASE_URL` y las claves de autenticación son secretos: van solamente en la nube.
 - [`.env.example`](.env.example) es únicamente para Docker Compose local.
 
 Lee [arquitectura central](docs/arquitectura-central.md), [catálogo de archivos](docs/catalogo-archivos.md), [orden de despliegue](docs/orden-despliegue.md) y [despliegue gratuito](docs/despliegue-gratuito.md) antes de crear recursos externos.

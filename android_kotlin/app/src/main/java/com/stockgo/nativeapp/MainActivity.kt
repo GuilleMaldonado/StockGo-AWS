@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
                 }
                 message(e.message ?: "No se pudo completar la operación.")
             } catch (e: Exception) {
-                message(e.message ?: "No hay conexión. Comprueba que el servidor de PC esté abierto.")
+                message(e.message ?: "No hay conexión con StockGo Cloud. Comprueba tu acceso a internet e inténtalo de nuevo.")
             } finally { busy = false; progress.visibility = View.GONE }
         }
     }
@@ -348,21 +348,87 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("stockgo", MODE_PRIVATE)
         val hero = gradientSection(page, "Menos pendientes.\nMás control.", "Todo tu inventario en un solo lugar, simple, ordenado y siempre contigo.")
         listOf("✓  Productos organizados", "✓  Acceso según tu rol", "✓  Información protegida en la nube").forEach { hero.addView(text(it, 14f).apply { setTextColor(Color.WHITE) }) }
-        val box = section(title = "Conecta con tu negocio", subtitle = "Usa el código SG1 que te entregó el administrador del negocio.")
+        val box = section(title = "Bienvenido de nuevo", subtitle = "Ingresa con el código de tu negocio y tu cuenta personal.")
         val code = field(box, "Código completo SG1", preferences.getString("codigo", "").orEmpty())
         code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        button(box, "Conectar al negocio") {
+        val username = field(box, "Usuario")
+        val password = field(box, "Contraseña", password = true)
+        button(box, "Iniciar sesión  →") {
             action {
                 val client = Api(BusinessCode.parse(code.text.toString()))
                 client.connect()
                 api = client
                 preferences.edit().putString("codigo", code.text.toString().trim()).apply()
-                credentials()
+                client.login(username.text.toString().trim(), password.text.toString())
+                afterLogin()
+            }
+        }
+        button(box, "Continuar como invitado", green) {
+            action {
+                val client = Api(BusinessCode.parse(code.text.toString()))
+                client.connect(); api = client
+                preferences.edit().putString("codigo", code.text.toString().trim()).apply()
+                client.login("", "", true); afterLogin()
             }
         }
         page.addView(text("Los datos y permisos se guardan en StockGo Cloud. Tu teléfono nunca funciona como servidor.", 14f))
         button(page, "Recuperar contraseña", navy) { recovery() }
-        button(page, "Crear nuevo negocio", navy) { createBusiness() }
+        button(page, "¿Nuevo por aquí? Crear cuenta", navy) { registration() }
+    }
+
+    /** Mismo flujo de la versión StockGo original, ahora respaldado por Render. */
+    private fun registration() {
+        reset("Crear cuenta", "Elige si crearás el negocio o si te unirás como vendedor.", "register")
+        val box = section(title = "Empieza con StockGo", subtitle = "Cada persona usa su propia cuenta; el código SG1 solo identifica el negocio.")
+        val choices = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val vendorChoice = RadioButton(this).apply { text = "Soy vendedor"; id = View.generateViewId(); isChecked = true }
+        val ownerChoice = RadioButton(this).apply { text = "Crear mi negocio"; id = View.generateViewId() }
+        choices.addView(vendorChoice, LinearLayout.LayoutParams(0, -2, 1f)); choices.addView(ownerChoice, LinearLayout.LayoutParams(0, -2, 1f)); box.addView(choices)
+        val explanation = text("Pega el código SG1 compartido por el administrador para crear tu cuenta de vendedor.", 13f).apply { setTextColor(Color.rgb(84, 112, 132)); setPadding(0, dp(6), 0, dp(16)) }
+        box.addView(explanation)
+        val ownerArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(ownerArea)
+        val business = field(ownerArea, "Nombre único de la empresa")
+        val vendorArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(vendorArea)
+        val code = field(vendorArea, "Código de negocio SG1", getSharedPreferences("stockgo", MODE_PRIVATE).getString("codigo", "").orEmpty())
+        code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        val first = field(box, "Nombres")
+        val last = field(box, "Apellidos")
+        val user = field(box, "Usuario (sin números)")
+        val pass = field(box, "Contraseña (8 a 128 caracteres)", password = true)
+        val confirm = field(box, "Repite la contraseña", password = true)
+        fun updateChoice(owner: Boolean) {
+            ownerArea.visibility = if (owner) View.VISIBLE else View.GONE
+            vendorArea.visibility = if (owner) View.GONE else View.VISIBLE
+            explanation.text = if (owner) "Serás el administrador y recibirás el código SG1 para compartir con tus vendedores." else "Pega el código SG1 compartido por el administrador para crear tu cuenta de vendedor."
+        }
+        choices.setOnCheckedChangeListener { _, checked -> updateChoice(checked == ownerChoice.id) }
+        updateChoice(false)
+        button(box, "Crear cuenta", green) {
+            action {
+                require(pass.text.toString() == confirm.text.toString()) { "Las contraseñas no coinciden." }
+                val payload = JSONObject().put("nombres", first.text.toString()).put("apellidos", last.text.toString())
+                    .put("usuario", user.text.toString()).put("password", pass.text.toString())
+                if (ownerChoice.isChecked) {
+                    payload.put("negocio", business.text.toString())
+                    val bootstrap = Api(BusinessCode(CLOUD_API_URL, "00000000000000000000000000000000", false))
+                    val result = bootstrap.request("POST", "businesses", payload)
+                    val sg1 = result.getString("sg1")
+                    getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", sg1).apply()
+                    api = Api(BusinessCode.parse(sg1)); api!!.connect()
+                    showNewBusinessCode(result.getString("nombreNegocio"), sg1)
+                } else {
+                    val client = Api(BusinessCode.parse(code.text.toString()))
+                    client.connect(); client.request("POST", "auth/register", payload)
+                    getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", code.text.toString().trim()).apply()
+                    api = client
+                    message("Cuenta creada. Ahora inicia sesión con tu usuario y contraseña.")
+                    login()
+                }
+            }
+        }
+        button(page, "Volver", navy) { login() }
     }
     private fun createBusiness() {
         reset("Crear negocio", "Registra tu negocio en StockGo Cloud y recibe su código SG1.", "business")
@@ -573,7 +639,7 @@ class MainActivity : ComponentActivity() {
                 } catch (e: ApiError) {
                     if (e.status == 401) { api?.token = ""; cart.clear(); saleRequest = null; login() }
                     else { list.removeAllViews(); list.addView(text(e.message.orEmpty())) }
-                } catch (_: Exception) { list.removeAllViews(); list.addView(text("No se pudo cargar. Revisa el servidor de PC.")) }
+                } catch (_: Exception) { list.removeAllViews(); list.addView(text("No se pudo cargar el inventario desde StockGo Cloud.")) }
             }
         }
         inventoryRefresh = { api?.clearCache(); reload() }

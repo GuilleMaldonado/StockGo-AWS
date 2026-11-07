@@ -8,6 +8,7 @@ from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "StockGo" / "escritorio.json"
 # Dirección comprobada del servicio central en Render. Puede sobrescribirse para
 # pruebas con STOCKGO_API_URL, pero los usuarios finales no deben escribirla.
@@ -20,15 +21,16 @@ def parse_sg1(value):
     try:
         code = value.strip()[4:]
         data = json.loads(base64.urlsafe_b64decode(code + "=" * (-len(code) % 4)).decode())
-        return data["url"].rstrip("/"), data["negocio"]
+        url = data["url"].rstrip("/")
+        if urlsplit(url).scheme != "https": raise ValueError("Solo se permiten códigos de StockGo Cloud por HTTPS.")
+        return url, data["negocio"]
     except (ValueError, KeyError, UnicodeDecodeError) as exc: raise ApiError("El código de negocio no es válido.") from exc
 class Api:
     def __init__(self, url="", code=""): self.url, self.code, self.token = url, code, ""
-    def call(self, method, path, body=None, provision=""):
+    def call(self, method, path, body=None):
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         if self.code: headers["X-StockGo-Code"] = self.code
         if self.token: headers["Authorization"] = "Bearer " + self.token
-        if provision: headers["X-StockGo-Provisioning-Key"] = provision
         request = Request(self.url + "/" + path.lstrip("/"), data=json.dumps(body).encode() if body is not None else None, headers=headers, method=method)
         try:
             with urlopen(request, timeout=20) as response: return json.loads(response.read().decode())
@@ -79,72 +81,62 @@ class App(tk.Tk):
         right = tk.Frame(shell, bg=BG, padx=38); right.pack(side="left", fill="both", expand=True)
         box = self.card(right, 32); box.place(relx=.5, rely=.5, anchor="center", relwidth=.9)
         ttk.Label(box, text="Conecta tu negocio", style="Title.TLabel").pack(anchor="center")
-        ttk.Label(box, text="Pega el código SG1 que te compartió el administrador.", style="Card.TLabel").pack(anchor="center", pady=(6, 22))
+        ttk.Label(box, text="Ingresa con el código de tu negocio y tu cuenta.", style="Card.TLabel").pack(anchor="center", pady=(6, 22))
         self.sg_value = tk.StringVar(value=self.saved_code())
         ttk.Label(box, text="Código del negocio", style="Card.TLabel").pack(anchor="w")
-        field = ttk.Entry(box, textvariable=self.sg_value, font=("Consolas", 10)); field.pack(fill="x", pady=(4, 15)); field.focus()
+        field = ttk.Entry(box, textvariable=self.sg_value, font=("Consolas", 10)); field.pack(fill="x", pady=(4, 12)); field.focus()
+        self.login_user, self.login_password = tk.StringVar(), tk.StringVar()
+        ttk.Label(box, text="Usuario", style="Card.TLabel").pack(anchor="w")
+        ttk.Entry(box, textvariable=self.login_user).pack(fill="x", pady=(4, 12))
+        ttk.Label(box, text="Contraseña", style="Card.TLabel").pack(anchor="w")
+        ttk.Entry(box, textvariable=self.login_password, show="•").pack(fill="x", pady=(4, 15))
         line = ttk.Frame(box, style="Card.TFrame"); line.pack(fill="x")
-        ttk.Button(line, text="Conectar", style="Primary.TButton", command=self.connect).pack(side="left")
-        ttk.Button(line, text="Crear negocio", command=self.business_form).pack(side="left", padx=10)
+        ttk.Button(line, text="Iniciar sesión", style="Primary.TButton", command=self.connect_and_login).pack(side="left")
+        ttk.Button(line, text="Invitado", command=lambda: self.connect_and_login(True)).pack(side="left", padx=10)
+        ttk.Button(box, text="¿Nuevo por aquí? Crear cuenta", command=self.registration_form).pack(anchor="center", pady=(16, 0))
         ttk.Label(box, text="Aplicación nativa conectada a StockGo Cloud.", style="Card.TLabel", foreground=MUTED).pack(anchor="center", pady=(20, 0))
     def connect(self):
         try:
             url, code = parse_sg1(self.sg_value.get()); self.api = Api(url, code)
             reply = self.api.call("POST", "connect", {"codigo": code}); self.remember(self.sg_value.get().strip()); self.login_screen(reply["nombreNegocio"])
         except ApiError as exc: messagebox.showerror("Conexión", str(exc), parent=self)
-    def business_form(self):
-        win = tk.Toplevel(self); win.title("Crear negocio"); win.configure(bg=BG); win.transient(self); win.grab_set()
-        box = self.card(win, 22); box.pack(fill="both", expand=True); values = {}
-        ttk.Label(box, text="El negocio se creará directamente en StockGo Cloud.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
-        for label, key, secret in (("Nombre de negocio", "negocio", False), ("Usuario administrador", "usuario", False), ("Nombres", "nombres", False), ("Apellidos", "apellidos", False), ("Contraseña", "password", True)):
-            ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(7, 1))
-            item = ttk.Entry(box, width=48, show="•" if secret else ""); item.pack(fill="x"); values[key] = item
+    def connect_and_login(self, guest=False):
+        try:
+            url, code = parse_sg1(self.sg_value.get()); self.api = Api(url, code)
+            reply = self.api.call("POST", "connect", {"codigo": code}); self.remember(self.sg_value.get().strip())
+            result = self.api.call("POST", "auth/guest" if guest else "auth/login", {} if guest else {"usuario": self.login_user.get().strip(), "password": self.login_password.get()})
+            self.api.token, self.user = result["token"], result["usuario"]; self.main_screen(reply["nombreNegocio"])
+        except ApiError as exc: messagebox.showerror("Acceso", str(exc), parent=self)
+    def registration_form(self):
+        win = tk.Toplevel(self); win.title("Crear cuenta"); win.configure(bg=BG); win.transient(self); win.grab_set()
+        box = self.card(win, 24); box.pack(fill="both", expand=True); owner = tk.BooleanVar(value=False); fields = {}
+        ttk.Label(box, text="Empieza con StockGo", style="Title.TLabel").pack(anchor="w")
+        hint = ttk.Label(box, text="Pega el código SG1 compartido por el administrador para crear tu cuenta de vendedor.", style="Card.TLabel", wraplength=440); hint.pack(anchor="w", pady=(5, 14))
+        modes = ttk.Frame(box, style="Card.TFrame"); modes.pack(fill="x")
+        ttk.Radiobutton(modes, text="Soy vendedor", variable=owner, value=False).pack(side="left")
+        ttk.Radiobutton(modes, text="Crear mi negocio", variable=owner, value=True).pack(side="left", padx=16)
+        owner_row = ttk.Frame(box, style="Card.TFrame"); vendor_row = ttk.Frame(box, style="Card.TFrame")
+        for label, key, secret in (("Nombre único de la empresa", "negocio", False),):
+            ttk.Label(owner_row, text=label, style="Card.TLabel").pack(anchor="w", pady=(10, 1)); fields[key] = ttk.Entry(owner_row); fields[key].pack(fill="x")
+        ttk.Label(vendor_row, text="Código de negocio SG1", style="Card.TLabel").pack(anchor="w", pady=(10, 1)); fields["codigo"] = ttk.Entry(vendor_row); fields["codigo"].pack(fill="x")
+        for label, key, secret in (("Nombres", "nombres", False), ("Apellidos", "apellidos", False), ("Usuario", "usuario", False), ("Contraseña", "password", True), ("Repite la contraseña", "confirm", True)):
+            ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(9, 1)); fields[key] = ttk.Entry(box, show="•" if secret else ""); fields[key].pack(fill="x")
+        def draw(*_):
+            if owner.get(): vendor_row.pack_forget(); owner_row.pack(fill="x"); hint.configure(text="Serás el administrador y recibirás el código SG1 para compartir con tus vendedores.")
+            else: owner_row.pack_forget(); vendor_row.pack(fill="x"); hint.configure(text="Pega el código SG1 compartido por el administrador para crear tu cuenta de vendedor.")
+        owner.trace_add("write", draw); draw()
         def create():
             try:
-                body = {key: values[key].get().strip() for key in ("negocio", "usuario", "nombres", "apellidos", "password")}
-                reply = Api(DEFAULT_API).call("POST", "businesses", body)
-                self.sg_value.set(reply["sg1"]); win.destroy()
-                messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self)
-                self.connect()
-            except ApiError as exc: messagebox.showerror("Crear negocio", str(exc), parent=win)
-        ttk.Button(box, text="Crear y conectar", style="Primary.TButton", command=create).pack(anchor="e", pady=(15, 0))
-    def platform_requests(self):
-        key = simpledialog.askstring("Aprobar negocios", "Clave maestra de plataforma:", show="•", parent=self)
-        if not key: return
-        try:
-            requests = Api(DEFAULT_API).call("GET", "platform/business-requests", provision=key)["solicitudes"]
-        except ApiError as exc: return messagebox.showerror("Solicitudes", str(exc), parent=self)
-        win = tk.Toplevel(self); win.title("Solicitudes de negocios"); win.configure(bg=BG); win.transient(self); win.grab_set()
-        box = self.card(win, 20); box.pack(fill="both", expand=True)
-        tree = ttk.Treeview(box, columns=("admin", "created"), show="tree headings", height=12)
-        tree.heading("#0", text="Negocio"); tree.heading("admin", text="Administrador"); tree.heading("created", text="Solicitado"); tree.column("#0", width=260); tree.pack(fill="both", expand=True)
-        for item in requests: tree.insert("", "end", iid=str(item["id"]), text=item["negocio"], values=(item["nombres"] + " " + item["apellidos"] + " (" + item["usuario"] + ")", item["creado"][:16]))
-        def approve():
-            selected = tree.selection()
-            if not selected: return
-            try:
-                reply = Api(DEFAULT_API).call("POST", f"platform/business-requests/{selected[0]}/approve", {}, key)
-                tree.delete(selected[0])
-                messagebox.showinfo("Negocio aprobado", "Entrega este código SG1 al administrador:\n\n" + reply["sg1"], parent=win)
-            except ApiError as exc: messagebox.showerror("Aprobar", str(exc), parent=win)
-        ttk.Button(box, text="Aprobar seleccionado", style="Primary.TButton", command=approve).pack(anchor="e", pady=(12, 0))
-    def vendor_form(self):
-        try:
-            url, business = parse_sg1(self.sg_value.get())
-        except ApiError:
-            return messagebox.showerror("Solicitud de vendedor", "Primero pega el código SG1 del negocio.", parent=self)
-        win = tk.Toplevel(self); win.title("Crear cuenta de vendedor"); win.configure(bg=BG); win.transient(self); win.grab_set()
-        box = self.card(win, 20); box.pack(fill="both", expand=True); fields = {}
-        ttk.Label(box, text="Tu cuenta quedará vinculada a este negocio. El código SG1 no concede permisos de administrador.", style="Card.TLabel").pack(anchor="w", pady=(5, 8))
-        for label, key, secret in (("Usuario", "usuario", False), ("Nombres", "nombres", False), ("Apellidos", "apellidos", False), ("Contraseña", "password", True)):
-            ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(6, 1))
-            field = ttk.Entry(box, show="•" if secret else ""); field.pack(fill="x"); fields[key] = field
-        def send():
-            try:
-                Api(url, business).call("POST", "auth/register", {name: field.get().strip() for name, field in fields.items()})
-                win.destroy(); messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
-            except ApiError as exc: messagebox.showerror("Crear cuenta de vendedor", str(exc), parent=win)
-        ttk.Button(box, text="Crear cuenta", style="Primary.TButton", command=send).pack(anchor="e", pady=14)
+                if fields["password"].get() != fields["confirm"].get(): raise ApiError("Las contraseñas no coinciden.")
+                body = {key: fields[key].get().strip() for key in ("nombres", "apellidos", "usuario", "password")}
+                if owner.get():
+                    body["negocio"] = fields["negocio"].get().strip(); reply = Api(DEFAULT_API).call("POST", "businesses", body)
+                    self.sg_value.set(reply["sg1"]); win.destroy(); messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self); self.connect()
+                else:
+                    url, code = parse_sg1(fields["codigo"].get()); Api(url, code).call("POST", "auth/register", body)
+                    self.sg_value.set(fields["codigo"].get().strip()); win.destroy(); messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
+            except ApiError as exc: messagebox.showerror("Crear cuenta", str(exc), parent=win)
+        ttk.Button(box, text="Crear cuenta", style="Primary.TButton", command=create).pack(anchor="e", pady=(18, 0))
     def login_screen(self, business):
         self.clear()
         root = ttk.Frame(self, padding=55); root.pack(fill="both", expand=True)
@@ -327,23 +319,6 @@ class App(tk.Tk):
             ttk.Button(box, text="Agregar", style="Primary.TButton", command=save).pack(anchor="e", pady=14)
         ttk.Button(self.content, text="Agregar vendedor", style="Primary.TButton", command=add).pack(anchor="e", pady=12)
         load()
-    def vendor_requests(self):
-        try:
-            requests = self.api.call("GET", "vendor-requests")["solicitudes"]
-        except ApiError as exc: return messagebox.showerror("Solicitudes", str(exc), parent=self)
-        win = tk.Toplevel(self); win.title("Solicitudes de vendedores"); win.configure(bg=BG); win.transient(self); win.grab_set()
-        box = self.card(win, 20); box.pack(fill="both", expand=True)
-        tree = ttk.Treeview(box, columns=("user", "created"), show="tree headings", height=12)
-        tree.heading("#0", text="Nombre"); tree.heading("user", text="Usuario"); tree.heading("created", text="Solicitado"); tree.column("#0", width=260); tree.pack(fill="both", expand=True)
-        for item in requests: tree.insert("", "end", iid=str(item["id"]), text=item["nombres"] + " " + item["apellidos"], values=(item["usuario"], item["creado"][:16]))
-        def approve():
-            selected = tree.selection()
-            if not selected: return
-            try:
-                self.api.call("POST", f"vendor-requests/{selected[0]}/approve", {})
-                tree.delete(selected[0]); messagebox.showinfo("Vendedor aprobado", "La cuenta ya puede iniciar sesión.", parent=win)
-            except ApiError as exc: messagebox.showerror("Aprobar", str(exc), parent=win)
-        ttk.Button(box, text="Aprobar seleccionado", style="Primary.TButton", command=approve).pack(anchor="e", pady=(12, 0))
     def logout(self):
         try: self.api.call("POST", "auth/logout", {})
         except ApiError: pass

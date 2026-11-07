@@ -12,34 +12,12 @@ import java.util.concurrent.ConcurrentHashMap
 class ApiError(val status: Int, message: String) : Exception(message)
 
 object HostPolicy {
-    fun privateHost(host: String): Boolean {
-        if (host == "localhost" || host == "::1" || host == "[::1]") return true
-        val bytes = ipv4(host) ?: return false
-        return bytes[0] == 10 || bytes[0] == 127 ||
-            (bytes[0] == 192 && bytes[1] == 168) ||
-            (bytes[0] == 172 && bytes[1] in 16..31)
-    }
-
-    private fun ipv4(host: String): List<Int>? {
-        if (!Regex("[0-9]+(?:\\.[0-9]+){3}").matches(host)) return null
-        val parts = host.split('.').map { it.toIntOrNull() ?: return null }
-        if (parts.any { it !in 0..255 } || host.split('.').any { it.length > 1 && it.startsWith('0') }) return null
-        return parts
-    }
-
-    fun vpnHost(host: String): Boolean {
-        val b = ipv4(host) ?: return false
-        return b[0] == 100 && b[1] in 64..127
-    }
-
-    fun validate(url: String, vpn: Boolean): URI {
+    /** El cliente cloud nunca acepta URL locales ni HTTP sin cifrar. */
+    fun validate(url: String): URI {
         val uri = try { URI(url.trim()) } catch (_: Exception) { throw IllegalArgumentException("Código de conexión inválido.") }
-        require(uri.scheme in listOf("http", "https") && !uri.host.isNullOrBlank() &&
+        require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
             uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
             uri.path in listOf("", "/") && (uri.port == -1 || uri.port in 1..65535)) { "Dirección de servidor inválida." }
-        require(uri.scheme == "https" || privateHost(uri.host) || (vpn && vpnHost(uri.host))) {
-            "HTTP solo se permite en Wi-Fi privada o en una VPN indicada por el código."
-        }
         return uri
     }
 }
@@ -55,7 +33,7 @@ data class BusinessCode(val url: String, val id: String, val vpn: Boolean) {
             val id = json.getString("negocio")
             val vpn = json.optBoolean("vpn", false)
             require(Regex("[A-Fa-f0-9]{32}").matches(id)) { "Identificador de negocio inválido." }
-            HostPolicy.validate(url, vpn)
+            HostPolicy.validate(url)
             return BusinessCode(url.trimEnd('/'), id, vpn)
         }
     }
@@ -81,8 +59,8 @@ class Api(val business: BusinessCode) {
     fun resumeRealtime() { if (realtimeSupported && token.isNotEmpty()) realtime.open(business, token) }
     fun pauseRealtime() { realtime.close() }
 
-    suspend fun request(method: String, path: String, body: JSONObject? = null, provisioningKey: String = ""): JSONObject = withContext(Dispatchers.IO) {
-        HostPolicy.validate(business.url, business.vpn)
+    suspend fun request(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+        HostPolicy.validate(business.url)
         val cacheable = method == "GET" && (path.startsWith("products?") || path == "sales")
         val key = "$token|$path"
         val previous = if (cacheable) cache[key] else null
@@ -112,7 +90,6 @@ class Api(val business: BusinessCode) {
             connection.readTimeout = 25000
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.setRequestProperty("X-StockGo-Code", business.id)
-            if (provisioningKey.isNotEmpty()) connection.setRequestProperty("X-StockGo-Provisioning-Key", provisioningKey)
             if (token.isNotEmpty()) connection.setRequestProperty("Authorization", "Bearer $token")
             if (!previous?.etag.isNullOrBlank()) connection.setRequestProperty("If-None-Match", previous!!.etag)
             if (body != null) {
