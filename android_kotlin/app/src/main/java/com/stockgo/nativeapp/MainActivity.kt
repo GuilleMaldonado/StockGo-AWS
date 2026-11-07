@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         // Los usuarios no escriben ni administran esta dirección. El SG1 identifica
         // el negocio y contiene esta misma URL de la nube.
-        private const val CLOUD_API_URL = "https://stockgo-api-demo.onrender.com"
+        private const val CLOUD_API_URL = "https://stockgo-api-demo-2kc7.onrender.com"
     }
     private val blue = Color.rgb(0, 115, 177)
     private val navy = Color.rgb(18, 59, 86)
