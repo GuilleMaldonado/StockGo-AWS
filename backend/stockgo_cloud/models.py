@@ -26,6 +26,22 @@ class Business(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BusinessRequest(Base):
+    __tablename__ = 'business_requests'
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    normalized_name: Mapped[str] = mapped_column(String(100), unique=True)
+    usuario: Mapped[str] = mapped_column(String(40))
+    nombres: Mapped[str] = mapped_column(String(80))
+    apellidos: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(128))
+    salt: Mapped[str] = mapped_column(String(128))
+    estado: Mapped[str] = mapped_column(String(16), default='pendiente')
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resuelto: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (CheckConstraint("estado IN ('pendiente','aprobada','rechazada')"), Index('ix_business_requests_estado', 'estado', 'id'))
+
+
 class User(Base):
     __tablename__ = 'users'
     __table_args__ = (UniqueConstraint('business_id', 'id'), UniqueConstraint('business_id', 'nombre'),
@@ -42,6 +58,21 @@ class User(Base):
     versionCredencial: Mapped[int] = mapped_column(Integer, default=0)
     requiereCambioPassword: Mapped[bool] = mapped_column(Boolean, default=False)
     temporalHasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class VendorRequest(Base):
+    __tablename__ = 'vendor_requests'
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    business_id: Mapped[str] = mapped_column(ForeignKey('businesses.id'), index=True)
+    usuario: Mapped[str] = mapped_column(String(40))
+    nombres: Mapped[str] = mapped_column(String(80))
+    apellidos: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(128))
+    salt: Mapped[str] = mapped_column(String(128))
+    estado: Mapped[str] = mapped_column(String(16), default='pendiente')
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resuelto: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (UniqueConstraint('business_id', 'usuario'), CheckConstraint("estado IN ('pendiente','aprobada','rechazada')"), Index('ix_vendor_requests_estado', 'business_id', 'estado', 'id'))
 
 
 class Product(Base):

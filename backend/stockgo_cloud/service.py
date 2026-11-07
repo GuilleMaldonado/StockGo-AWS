@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from .domain import CATEGORIES, COMMON, FIELDS, TECHNICAL, Error, identity, integer, matches, password_fields, text, valid_password
-from .models import Audit, AuthSession, Business, Product, RateLimit, Sale, SaleDetail, User, utcnow
+from .models import Audit, AuthSession, Business, BusinessRequest, Product, RateLimit, Sale, SaleDetail, User, VendorRequest, utcnow
 
 
 def person(user):
@@ -76,7 +76,7 @@ class Service:
         self.settings = settings
 
     def limit(self, ip, route):
-        sensitive = {'connect', 'auth/login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses'}
+        sensitive = {'connect', 'auth/login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
         if route not in sensitive:
             return
         instant = utcnow()
@@ -158,6 +158,62 @@ class Service:
         from .domain import sg1
         return {'ok': True, 'nombreNegocio': name, 'codigo': business.id, 'sg1': sg1(self.settings.api_public_url, business.id)}
 
+    def require_platform_key(self, key):
+        if not self.settings.provisioning_key or not secrets.compare_digest(key.encode(), self.settings.provisioning_key.encode()):
+            raise Error('La operación de plataforma requiere la clave maestra.', 403)
+
+    @staticmethod
+    def request_json(request):
+        return {'id': request.id, 'negocio': request.name, 'usuario': request.usuario,
+                'nombres': request.nombres, 'apellidos': request.apellidos,
+                'estado': request.estado, 'creado': request.creado.isoformat()}
+
+    def request_business(self, db, body):
+        from .domain import normalize
+        name, normalized = normalize(text(body, 'negocio'))
+        username, password, first, last = identity(body)
+        digest, salt = password_fields(password)
+        request = BusinessRequest(name=name, normalized_name=normalized, usuario=username,
+                                  nombres=first, apellidos=last, password_hash=digest, salt=salt)
+        db.add(request); db.flush()
+        return {'ok': True, 'solicitudId': request.id,
+                'mensaje': 'Solicitud enviada. El responsable de StockGo debe aprobar el negocio.'}
+
+    def approve_business(self, db, request_id):
+        request = db.get(BusinessRequest, request_id)
+        if not request or request.estado != 'pendiente':
+            raise Error('La solicitud ya no está disponible.', 404)
+        business = Business(id=secrets.token_hex(16).upper(), name=request.name, normalized_name=request.normalized_name)
+        db.add(business); db.flush()
+        user = User(business_id=business.id, nombre=request.usuario, password_hash=request.password_hash, salt=request.salt,
+                    rol='administrador', nombres=request.nombres, apellidos=request.apellidos,
+                    codigoInterno='AD-' + secrets.token_hex(5).upper())
+        db.add(user); request.estado, request.resuelto = 'aprobada', utcnow()
+        from .domain import sg1
+        return {'ok': True, 'solicitudId': request.id, 'nombreNegocio': business.name,
+                'sg1': sg1(self.settings.api_public_url, business.id)}
+
+    def request_vendor(self, db, code, body):
+        if not db.get(Business, code):
+            raise Error('Código de negocio incorrecto.', 403)
+        username, password, first, last = identity(body)
+        digest, salt = password_fields(password)
+        request = VendorRequest(business_id=code, usuario=username, nombres=first, apellidos=last,
+                                password_hash=digest, salt=salt)
+        db.add(request); db.flush()
+        return {'ok': True, 'solicitudId': request.id,
+                'mensaje': 'Solicitud enviada. El administrador del negocio debe aprobarla.'}
+
+    def approve_vendor(self, db, code, request_id):
+        request = db.scalar(select(VendorRequest).where(VendorRequest.business_id == code, VendorRequest.id == request_id).with_for_update())
+        if not request or request.estado != 'pendiente':
+            raise Error('La solicitud ya no está disponible.', 404)
+        user = User(business_id=code, nombre=request.usuario, password_hash=request.password_hash, salt=request.salt,
+                    rol='vendedor', nombres=request.nombres, apellidos=request.apellidos,
+                    codigoInterno='VD-' + secrets.token_hex(5).upper())
+        db.add(user); db.flush(); request.estado, request.resuelto = 'aprobada', utcnow()
+        return {'ok': True, 'usuario': person(user)}
+
     def handle(self, method, target, body, code='', token='', ip='unknown', provisioning_key='', if_none_match=''):
         uri = urlsplit(target)
         route = uri.path.strip('/')
@@ -170,6 +226,24 @@ class Service:
             raise Error('Ese nombre, código o solicitud ya existe, o los datos incumplen las reglas del negocio.', 409) from exc
 
     def _handle(self, db, method, route, query, body, code, token, provision_key, if_none_match, target):
+        if route == 'business-requests' and method == 'POST':
+            return 202, self.request_business(db, body), ''
+        platform = re.fullmatch(r'platform/business-requests(?:/(\d+)/(approve|reject))?', route)
+        if platform:
+            self.require_platform_key(provision_key)
+            if method == 'GET' and not platform[1]:
+                requests = db.scalars(select(BusinessRequest).where(BusinessRequest.estado == 'pendiente').order_by(BusinessRequest.id))
+                return 200, {'solicitudes': [self.request_json(item) for item in requests]}, ''
+            if method == 'POST' and platform[1] and platform[2] == 'approve':
+                return 200, self.approve_business(db, int(platform[1])), ''
+            if method == 'POST' and platform[1] and platform[2] == 'reject':
+                request = db.get(BusinessRequest, int(platform[1]))
+                if not request or request.estado != 'pendiente': raise Error('La solicitud ya no está disponible.', 404)
+                request.estado, request.resuelto = 'rechazada', utcnow()
+                return 200, {'ok': True}, ''
+            raise Error('Ruta no encontrada.', 404)
+        if route == 'vendor-requests' and method == 'POST':
+            return 202, self.request_vendor(db, code, body), ''
         if route == 'businesses' and method == 'POST':
             return 201, self.provision(db, body, provision_key), ''
         if route == 'health' and method == 'GET':
@@ -210,6 +284,23 @@ class Service:
             return 200, self.issue(db, business, user), ''
         business, session, user = self.authenticate(db, code, token, route in ('auth/password', 'auth/logout'))
         admin = bool(user and user.rol == 'administrador')
+        vendor_request = re.fullmatch(r'vendor-requests(?:/(\d+)/(approve|reject))?', route)
+        if vendor_request:
+            self.require(user, 'administrador')
+            if method == 'GET' and not vendor_request[1]:
+                requests = db.scalars(select(VendorRequest).where(VendorRequest.business_id == code, VendorRequest.estado == 'pendiente').order_by(VendorRequest.id))
+                return 200, {'solicitudes': [{'id': item.id, 'usuario': item.usuario, 'nombres': item.nombres,
+                                                'apellidos': item.apellidos, 'creado': item.creado.isoformat()} for item in requests]}, ''
+            if method == 'POST' and vendor_request[1] and vendor_request[2] == 'approve':
+                result = self.approve_vendor(db, code, int(vendor_request[1]))
+                self.notify(db, code, 'users')
+                return 200, result, ''
+            if method == 'POST' and vendor_request[1] and vendor_request[2] == 'reject':
+                request = db.scalar(select(VendorRequest).where(VendorRequest.business_id == code, VendorRequest.id == int(vendor_request[1])).with_for_update())
+                if not request or request.estado != 'pendiente': raise Error('La solicitud ya no está disponible.', 404)
+                request.estado, request.resuelto = 'rechazada', utcnow()
+                return 200, {'ok': True}, ''
+            raise Error('Ruta no encontrada.', 404)
         if route == 'auth/logout' and method == 'POST':
             db.delete(session)
             return 200, {'ok': True}, ''

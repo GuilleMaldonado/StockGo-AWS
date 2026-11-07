@@ -7,7 +7,7 @@ if (!(Test-Path -LiteralPath $stockGoPython)) { throw 'No existe .venv. Crea el 
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar PyInstaller en .venv.' }
 Push-Location $stockGoRoot
 try {
-    & $stockGoPython -m PyInstaller --noconfirm --clean --onefile --windowed --name StockGo-Web --distpath $stockGoDist --workpath build\pyinstaller --specpath build\pyinstaller desktop\iniciar.py
-    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller no pudo generar StockGo-Web.exe.' }
+    & $stockGoPython -m PyInstaller --noconfirm --clean --onefile --windowed --name StockGo-Desktop --distpath $stockGoDist --workpath build\pyinstaller --specpath build\pyinstaller desktop\iniciar.py
+    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller no pudo generar StockGo-Desktop.exe.' }
 } finally { Pop-Location }
-Write-Host "Ejecutable generado: $stockGoDist\StockGo-Web.exe" -ForegroundColor Green
+Write-Host "Ejecutable nativo generado: $stockGoDist\StockGo-Desktop.exe" -ForegroundColor Green
