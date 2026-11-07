@@ -76,18 +76,20 @@ class Service:
         self.settings = settings
 
     def limit(self, ip, route):
-        sensitive = {'connect', 'auth/login', 'auth/guest', 'auth/register', 'auth/password', 'users/reset-password', 'ws/auth', 'businesses'}
+        sensitive = {'connect', 'auth/login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses'}
         if route not in sensitive:
             return
         instant = utcnow()
+        # La creación de negocios tiene una ventana más amplia que el inicio
+        # de sesión para dificultar abusos sin bloquear el uso normal.
         minutes = 60 if route == 'businesses' else 1
         bucket = int(instant.timestamp()) // (60 * minutes)
         key = hashlib.sha256(f'{ip}|{route}|{bucket}'.encode()).hexdigest()
         with self.factory.begin() as db:
             statement = insert(RateLimit).values(key=key, hits=1, expires_at=instant + timedelta(minutes=minutes * 2))
             hits = db.scalar(statement.on_conflict_do_update(index_elements=[RateLimit.key], set_={'hits': RateLimit.hits + 1}).returning(RateLimit.hits))
-        if hits > (3 if route == 'businesses' else 10):
-            raise Error('Demasiados intentos. Espera antes de volver a intentar.', 429)
+            if hits > (3 if route == 'businesses' else 10):
+                raise Error('Demasiados intentos. Espera antes de volver a intentar.', 429)
 
     def authenticate(self, db, code, token, allow_change=False):
         business = db.get(Business, code)
@@ -185,6 +187,14 @@ class Service:
         business = db.get(Business, code)
         if not business:
             raise Error('Código de negocio incorrecto.', 403)
+        if method == 'POST' and route == 'auth/recovery-request':
+            # Respuesta neutra: no revela si un nombre de usuario existe.
+            username = text(body, 'usuario').strip().lower()
+            target = db.scalar(select(User).where(User.business_id == code, User.nombre == username))
+            db.add(Audit(business_id=code, actorId=0, actor='Solicitud de recuperación',
+                         objetivoId=target.id if target else 0, objetivo=username[:80], accion='solicitar_recuperacion'))
+            self.notify(db, code, 'users')
+            return 202, {'ok': True, 'mensaje': 'Si la cuenta existe, el administrador del negocio podrá generar una clave temporal.'}, ''
         if method == 'POST' and route in ('auth/register', 'auth/login', 'auth/guest'):
             if route == 'auth/register':
                 self.create_user(db, code, body)

@@ -321,6 +321,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         page.addView(text("Sin Firebase. Los datos y los permisos se administran en el servidor de tu negocio.", 14f))
+        button(page, "Recuperar contraseña", navy) { recovery() }
         button(page, "Crear nuevo negocio", navy) { createBusiness() }
     }
     private fun createBusiness() {
@@ -347,12 +348,20 @@ class MainActivity : ComponentActivity() {
                 val sg1 = result.getString("sg1")
                 getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", sg1).apply()
                 api = Api(BusinessCode.parse(sg1)); api!!.connect()
-                copy(sg1)
-                message("Negocio creado. El código SG1 se copió al portapapeles; guárdalo para tu equipo.")
-                credentials()
+                showNewBusinessCode(result.getString("nombreNegocio"), sg1)
             }
         }
         button(page, "Volver", navy) { login() }
+    }
+    private fun showNewBusinessCode(name: String, sg1: String) {
+        val code = TextView(this).apply {
+            text = sg1; textSize = 14f; setTextColor(navy); setTextIsSelectable(true)
+            setPadding(dp(18), dp(12), dp(18), dp(12)); background = shape(Color.rgb(232, 244, 253), 14)
+        }
+        AlertDialog.Builder(this).setTitle("Negocio creado · $name")
+            .setMessage("Guarda este código SG1. Identifica tu negocio para iniciar sesión y conectar vendedores.")
+            .setView(code).setNegativeButton("Copiar") { _, _ -> copy(sg1) }
+            .setPositiveButton("Continuar") { _, _ -> credentials() }.show()
     }
     private fun credentials() {
         reset(api!!.name, "Conexión establecida · elige tu acceso", "login")
@@ -365,7 +374,25 @@ class MainActivity : ComponentActivity() {
         }
         button(box, "Crear cuenta de vendedor", navy) { register() }
         button(box, "Continuar como invitado", green) { action { api!!.login("", "", true); afterLogin() } }
+        button(page, "Recuperar contraseña", navy) { recovery() }
         button(page, "Cambiar de negocio", navy) { api = null; login() }
+    }
+    private fun recovery() {
+        reset("Recuperar contraseña", "Solicita ayuda al administrador del negocio", "recovery")
+        val box = section(title = "Solicitar recuperación", subtitle = "Por seguridad no confirmamos si una cuenta existe. El administrador genera una clave temporal.")
+        val code = field(box, "Código completo SG1", getSharedPreferences("stockgo", MODE_PRIVATE).getString("codigo", "").orEmpty())
+        code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        val username = field(box, "Usuario")
+        button(box, "Enviar solicitud", green) {
+            action {
+                val client = Api(BusinessCode.parse(code.text.toString()))
+                client.request("POST", "auth/recovery-request", JSONObject().put("usuario", username.text.toString().trim()))
+                getSharedPreferences("stockgo", MODE_PRIVATE).edit().putString("codigo", code.text.toString().trim()).apply()
+                message("Solicitud enviada. Contacta al administrador para recibir una clave temporal.")
+                login()
+            }
+        }
+        button(page, "Volver", navy) { if (api == null) login() else credentials() }
     }
     private fun pendingKey() = "${api!!.business.id}_${api!!.user.optInt("id") }"
     private fun restorePending() {
