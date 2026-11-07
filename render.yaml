@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: stockgo-api-guille-618
+    name: stockgo-api-demo
     runtime: docker
     plan: free
     region: oregon
@@ -15,13 +15,13 @@ services:
         value: production
       - key: DATABASE_URL
         fromDatabase:
-          name: stockgo-guille-618-db
+          name: stockgo-demo-db
           property: connectionString
       - key: PROVISIONING_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
         fromService:
-          name: stockgo-web-guille-618
+          name: stockgo-web-demo
           type: web
           envVarKey: RENDER_EXTERNAL_URL
       - key: DB_SSLMODE
@@ -35,7 +35,7 @@ services:
       - key: FORWARDED_ALLOW_IPS
         value: '*'
   - type: web
-    name: stockgo-web-guille-618
+    name: stockgo-web-demo
     runtime: static
     rootDir: frontend_web
     buildCommand: python build.py
@@ -44,7 +44,7 @@ services:
     envVars:
       - key: STOCKGO_API_URL
         fromService:
-          name: stockgo-api-guille-618
+          name: stockgo-api-demo
           type: web
           envVarKey: RENDER_EXTERNAL_URL
     headers:
@@ -58,7 +58,7 @@ services:
         name: Referrer-Policy
         value: no-referrer
 databases:
-  - name: stockgo-guille-618-db
+  - name: stockgo-demo-db
     plan: free
     region: oregon
     databaseName: stockgo
