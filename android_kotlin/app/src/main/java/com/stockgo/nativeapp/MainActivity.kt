@@ -45,6 +45,8 @@ class MainActivity : ComponentActivity() {
     private val navy = Color.rgb(18, 59, 86)
     private val pale = Color.rgb(242, 248, 252)
     private val green = Color.rgb(7, 132, 92)
+    private val sky = Color.rgb(56, 189, 248)
+    private val yellow = Color.rgb(255, 200, 87)
     private var api: Api? = null
     private lateinit var page: LinearLayout
     private lateinit var header: LinearLayout
@@ -178,7 +180,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun shape(color: Int, radius: Int = 18) = GradientDrawable().apply {
+    private fun shape(color: Int, radius: Int = 24) = GradientDrawable().apply {
         setColor(color); cornerRadius = dp(radius).toFloat()
         setStroke(dp(1), Color.rgb(215, 231, 241))
     }
@@ -253,6 +255,37 @@ class MainActivity : ComponentActivity() {
         if (subtitle.isNotEmpty()) box.addView(text(subtitle, 14f))
         return box
     }
+    private fun gradientSection(parent: LinearLayout, title: String, subtitle: String): LinearLayout {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(24), dp(24), dp(24))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(navy, blue, sky)).apply { cornerRadius = dp(26).toFloat() }
+            elevation = dp(5).toFloat()
+        }
+        parent.addView(box, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(20) })
+        box.addView(text("STOCKGO · TU NEGOCIO", 11f, true).apply { setTextColor(Color.rgb(186, 230, 253)); letterSpacing = .12f })
+        box.addView(text(title, 27f, true).apply { setTextColor(Color.WHITE); setPadding(0, dp(12), 0, dp(4)) })
+        box.addView(text(subtitle, 15f).apply { setTextColor(Color.rgb(221, 243, 255)); setPadding(0, 0, 0, dp(10)) })
+        return box
+    }
+    private fun metric(parent: LinearLayout, symbol: String, value: String, label: String, color: Int) {
+        val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(13), dp(13), dp(13), dp(13)); background = shape(Color.WHITE) }
+        parent.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(7) })
+        val icon = TextView(this).apply { text = symbol; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = shape(color, 13); setPadding(dp(7), dp(5), dp(7), dp(5)) }
+        card.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        card.addView(text(value, 23f, true).apply { setPadding(0, dp(9), 0, 0) })
+        card.addView(text(label, 11f).apply { setTextColor(Color.rgb(84, 112, 132)); setPadding(0, 0, 0, 0) })
+    }
+    private fun moduleCard(parent: LinearLayout, symbol: String, title: String, subtitle: String, color: Int, action: () -> Unit) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(16), dp(18), dp(16), dp(16)); background = shape(Color.WHITE)
+            isClickable = true; isFocusable = true; setOnClickListener { if (!busy && !imageLoading) action() }
+        }
+        parent.addView(card, LinearLayout.LayoutParams(0, dp(184), 1f).apply { marginEnd = dp(8); bottomMargin = dp(16) })
+        val badge = TextView(this).apply { text = symbol; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); background = shape(color, 17) }
+        card.addView(badge, LinearLayout.LayoutParams(dp(58), dp(58)))
+        card.addView(text(title, 16f, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(14), 0, dp(2)) })
+        card.addView(text(subtitle, 12f).apply { gravity = Gravity.CENTER; setTextColor(Color.rgb(84, 112, 132)); setPadding(0, 0, 0, 0) })
+    }
     private fun button(parent: LinearLayout, label: String, color: Int = blue, onClick: () -> Unit): Button {
         val button = Button(this).apply {
             text = label; isAllCaps = false; textSize = 15f; setTextColor(Color.WHITE)
@@ -313,6 +346,8 @@ class MainActivity : ComponentActivity() {
     private fun login() {
         reset("StockGo", "Inventario y ventas · Android nativo", "login")
         val preferences = getSharedPreferences("stockgo", MODE_PRIVATE)
+        val hero = gradientSection(page, "Menos pendientes.\nMás control.", "Todo tu inventario en un solo lugar, simple, ordenado y siempre contigo.")
+        listOf("✓  Productos organizados", "✓  Acceso según tu rol", "✓  Información protegida en la nube").forEach { hero.addView(text(it, 14f).apply { setTextColor(Color.WHITE) }) }
         val box = section(title = "Conecta con tu negocio", subtitle = "Usa el código SG1 que te entregó el administrador del negocio.")
         val code = field(box, "Código completo SG1", preferences.getString("codigo", "").orEmpty())
         code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -470,23 +505,31 @@ class MainActivity : ComponentActivity() {
 
     private fun home() {
         reset(api!!.name, "${api!!.user.optString("nombres")} ${api!!.user.optString("apellidos")} · ${api!!.user.optString("rol")}", "home")
-        val box = section(title = "Tu negocio, en movimiento", subtitle = "Consulta existencias, prepara una cuenta y registra cada venta con su responsable.")
-        if (saleRequest != null) box.addView(text("Hay una venta pendiente. Abre Ver cuenta y reintenta para confirmar su estado.", 16f, true))
-        button(box, "▣  Inventario y fichas técnicas") { inventory() }
+        val hero = gradientSection(page, "Todo tu negocio,\nen un solo lugar.", "Consulta productos, controla existencias y trabaja con tu equipo desde cualquier dispositivo.")
+        button(hero, "Ver catálogo", Color.WHITE) { inventory() }.apply { setTextColor(blue) }
+        val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        page.addView(metrics, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(20) })
+        metric(metrics, "▣", "${cart.size}", "En cuenta", blue)
+        metric(metrics, "◈", if (api!!.seller) "Ventas" else "Stock", if (api!!.seller) "Tu operación" else "Inventario", green)
+        metric(metrics, "⌁", if (api!!.admin) "SG1" else "Vista", if (api!!.admin) "Equipo conectado" else "Consulta", yellow)
+        page.addView(text("Tu espacio de trabajo", 21f, true))
+        page.addView(text("Elige lo que necesitas hacer hoy.", 13f).apply { setTextColor(Color.rgb(84, 112, 132)); setPadding(0, 0, 0, dp(14)) })
+        fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { page.addView(it) }
+        var current = row()
+        moduleCard(current, "▣", if (api!!.admin) "Gestionar productos" else "Consultar productos", "Catálogo, fotos y existencias.", blue) { inventory() }
+        if (api!!.seller) moduleCard(current, "＋", "Ventas", "Arma una cuenta y vende por unidad.", green) { inventory() }
+        else { val empty = Space(this); current.addView(empty, LinearLayout.LayoutParams(0, 1, 1f)) }
         if (api!!.seller) {
-            button(box, "＋  Nueva venta / cuenta", green) { inventory() }
-            button(box, "▤  Ver cuenta (${cart.size} productos)") { cartScreen() }
-            button(box, "▥  Historial y estadísticas", navy) { reports() }
+            current = row()
+            moduleCard(current, "▤", "Cuenta actual", "${cart.size} productos listos para vender.", blue) { cartScreen() }
+            moduleCard(current, "◈", "Historial y estadísticas", "Ventas y productividad.", sky) { reports() }
         }
         if (api!!.admin) {
-            button(box, "⌁  Compartir código SG1 con vendedores", navy) { invite() }
+            current = row()
+            moduleCard(current, "♟", "Vendedores y equipo", "Gestiona cuentas y permisos.", blue) { team() }
+            moduleCard(current, "⌁", "Compartir código SG1", "Conecta vendedores a este negocio.", green) { invite() }
         }
-        if (api!!.admin) {
-            val teamBox = section(title = "Administra tu equipo")
-            button(teamBox, "Vendedores y permisos") { team() }
-            button(teamBox, "Invitar al negocio", green) { invite() }
-            button(teamBox, "Agregar producto") { productForm(null) }
-        }
+        if (saleRequest != null) page.addView(text("Hay una venta pendiente. Abre Cuenta actual para reintentar.", 14f, true))
         button(page, "Cerrar sesión", navy) { logout() }
     }
     private fun inventory() {
