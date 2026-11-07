@@ -188,7 +188,8 @@ class App(tk.Tk):
                     self.sg_value.set(reply["sg1"]); win.destroy(); messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self); self.connect_screen()
                 else:
                     url, code = parse_sg1(fields["codigo"].get()); Api(url, code).call("POST", "auth/register", body)
-                    self.sg_value.set(fields["codigo"].get().strip()); win.destroy(); messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
+                    self.sg_value.set(fields["codigo"].get().strip()); win.destroy(); self.connect_screen()
+                    messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
             except ApiError as exc: messagebox.showerror("Crear cuenta", str(exc), parent=win)
         ttk.Button(box, text="Crear cuenta", style="Primary.TButton", command=create).pack(anchor="e", pady=(18, 0))
     def login_screen(self, business):

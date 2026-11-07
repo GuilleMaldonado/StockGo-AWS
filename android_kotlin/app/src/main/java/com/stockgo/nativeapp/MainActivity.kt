@@ -503,7 +503,7 @@ class MainActivity : ComponentActivity() {
         AlertDialog.Builder(this).setTitle("Negocio creado · $name")
             .setMessage("Guarda este código SG1. Identifica tu negocio para iniciar sesión y conectar vendedores.")
             .setView(code).setNegativeButton("Copiar") { _, _ -> copy(sg1) }
-            .setPositiveButton("Continuar") { _, _ -> credentials() }.show()
+            .setPositiveButton("Ir al acceso principal") { _, _ -> login() }.show()
     }
     private fun credentials() {
         reset(api!!.name, "Conexión establecida · elige tu acceso", "login")
