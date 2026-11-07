@@ -8,7 +8,8 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
-    autoDeployTrigger: 'off'
+    # Cada commit validado en esta rama actualiza la API central.
+    autoDeployTrigger: 'commit'
     envVars:
       - key: APP_ENV
         value: production
@@ -39,6 +40,7 @@ services:
     rootDir: frontend_web
     buildCommand: python build.py
     staticPublishPath: ./dist
+    autoDeployTrigger: 'commit'
     envVars:
       - key: STOCKGO_API_URL
         fromService:
