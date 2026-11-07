@@ -76,7 +76,7 @@ class Service:
         self.settings = settings
 
     def limit(self, ip, route):
-        sensitive = {'connect', 'auth/login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
+        sensitive = {'connect', 'auth/login', 'auth/admin-login', 'auth/guest', 'auth/register', 'auth/password', 'auth/recovery-request', 'users/reset-password', 'ws/auth', 'businesses', 'business-requests', 'vendor-requests'}
         if route not in sensitive:
             return
         instant = utcnow()
@@ -256,6 +256,22 @@ class Service:
             if not business:
                 raise Error('Código de negocio incorrecto.', 403)
             return 200, {'ok': True, 'nombreNegocio': business.name, 'websocket': '/ws', 'apiVersion': 2}, ''
+        # El administrador identifica su negocio por su nombre único. No necesita
+        # pegar SG1 en cada dispositivo; la respuesta entrega el vínculo SG1 que
+        # el cliente conserva para las operaciones posteriores.
+        if route == 'auth/admin-login' and method == 'POST':
+            from .domain import normalize, sg1
+            _, normalized = normalize(text(body, 'negocio'))
+            business = db.scalar(select(Business).where(Business.normalized_name == normalized))
+            username = text(body, 'usuario').strip().lower()
+            user = db.scalar(select(User).where(User.business_id == business.id, User.nombre == username, User.rol == 'administrador')) if business else None
+            if not user or not matches(text(body, 'password'), row_password(user)):
+                raise Error('Negocio, usuario o contraseña incorrectos.', 401)
+            if user.requiereCambioPassword and (not user.temporalHasta or user.temporalHasta <= utcnow()):
+                raise Error('La contraseña temporal venció.', 401)
+            result = self.issue(db, business, user)
+            result.update({'nombreNegocio': business.name, 'sg1': sg1(self.settings.api_public_url, business.id)})
+            return 200, result, ''
         business = db.get(Business, code)
         if not business:
             raise Error('Código de negocio incorrecto.', 403)

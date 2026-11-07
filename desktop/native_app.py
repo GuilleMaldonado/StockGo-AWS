@@ -80,13 +80,21 @@ class App(tk.Tk):
             tk.Label(hero, text=item, bg=NAVY, fg="white", anchor="w", font=("Segoe UI", 11)).pack(anchor="w", pady=7)
         right = tk.Frame(shell, bg=BG, padx=38); right.pack(side="left", fill="both", expand=True)
         box = self.card(right, 32); box.place(relx=.5, rely=.5, anchor="center", relwidth=.9)
-        ttk.Label(box, text="Conecta tu negocio", style="Title.TLabel").pack(anchor="center")
-        ttk.Label(box, text="Ingresa con el código de tu negocio y tu cuenta.", style="Card.TLabel").pack(anchor="center", pady=(6, 22))
+        ttk.Label(box, text="Bienvenido de nuevo", style="Title.TLabel").pack(anchor="center")
+        ttk.Label(box, text="El administrador entra con su negocio. El vendedor usa SG1 solo al vincularse.", style="Card.TLabel", wraplength=410).pack(anchor="center", pady=(6, 18))
+        self.login_role = tk.StringVar(value="administrador")
+        roles = ttk.Frame(box, style="Card.TFrame"); roles.pack(fill="x", pady=(0, 10))
+        ttk.Radiobutton(roles, text="Administrador", value="administrador", variable=self.login_role).pack(side="left")
+        ttk.Radiobutton(roles, text="Vendedor", value="vendedor", variable=self.login_role).pack(side="left", padx=18)
+        self.business_login_row = ttk.Frame(box, style="Card.TFrame")
+        ttk.Label(self.business_login_row, text="Nombre del negocio", style="Card.TLabel").pack(anchor="w")
+        self.business_login = tk.StringVar(); ttk.Entry(self.business_login_row, textvariable=self.business_login).pack(fill="x", pady=(4, 12))
         self.sg_value = tk.StringVar(value=self.saved_code())
-        ttk.Label(box, text="Código del negocio", style="Card.TLabel").pack(anchor="w")
-        field = ttk.Entry(box, textvariable=self.sg_value, font=("Consolas", 10)); field.pack(fill="x", pady=(4, 12)); field.focus()
+        self.code_login_row = ttk.Frame(box, style="Card.TFrame")
+        ttk.Label(self.code_login_row, text="Código del negocio SG1", style="Card.TLabel").pack(anchor="w")
+        field = ttk.Entry(self.code_login_row, textvariable=self.sg_value, font=("Consolas", 10)); field.pack(fill="x", pady=(4, 12)); field.focus()
         self.login_user, self.login_password = tk.StringVar(), tk.StringVar()
-        ttk.Label(box, text="Usuario", style="Card.TLabel").pack(anchor="w")
+        self.login_user_widget = ttk.Label(box, text="Usuario", style="Card.TLabel"); self.login_user_widget.pack(anchor="w")
         ttk.Entry(box, textvariable=self.login_user).pack(fill="x", pady=(4, 12))
         ttk.Label(box, text="Contraseña", style="Card.TLabel").pack(anchor="w")
         ttk.Entry(box, textvariable=self.login_password, show="•").pack(fill="x", pady=(4, 15))
@@ -94,7 +102,16 @@ class App(tk.Tk):
         ttk.Button(line, text="Iniciar sesión", style="Primary.TButton", command=self.connect_and_login).pack(side="left")
         ttk.Button(line, text="Invitado", command=lambda: self.connect_and_login(True)).pack(side="left", padx=10)
         ttk.Button(box, text="¿Nuevo por aquí? Crear cuenta", command=self.registration_form).pack(anchor="center", pady=(16, 0))
+        def update_role(*_):
+            if self.login_role.get() == "administrador":
+                self.code_login_row.pack_forget(); self.business_login_row.pack(fill="x", before=self.login_user_widget)
+            else:
+                self.business_login_row.pack_forget()
+                if not self.saved_code(): self.code_login_row.pack(fill="x", before=self.login_user_widget)
+                else: self.code_login_row.pack_forget()
+        self.login_role.trace_add("write", update_role); update_role()
         ttk.Label(box, text="Aplicación nativa conectada a StockGo Cloud.", style="Card.TLabel", foreground=MUTED).pack(anchor="center", pady=(20, 0))
+        ttk.Button(box, text="Recuperar contraseña", command=self.recovery_form).pack(anchor="center", pady=(8, 0))
     def connect(self):
         try:
             url, code = parse_sg1(self.sg_value.get()); self.api = Api(url, code)
@@ -102,11 +119,30 @@ class App(tk.Tk):
         except ApiError as exc: messagebox.showerror("Conexión", str(exc), parent=self)
     def connect_and_login(self, guest=False):
         try:
-            url, code = parse_sg1(self.sg_value.get()); self.api = Api(url, code)
-            reply = self.api.call("POST", "connect", {"codigo": code}); self.remember(self.sg_value.get().strip())
-            result = self.api.call("POST", "auth/guest" if guest else "auth/login", {} if guest else {"usuario": self.login_user.get().strip(), "password": self.login_password.get()})
-            self.api.token, self.user = result["token"], result["usuario"]; self.main_screen(reply["nombreNegocio"])
+            if self.login_role.get() == "administrador" and not guest:
+                result = Api(DEFAULT_API).call("POST", "auth/admin-login", {"negocio": self.business_login.get().strip(), "usuario": self.login_user.get().strip(), "password": self.login_password.get()})
+                self.sg_value.set(result["sg1"]); url, code = parse_sg1(result["sg1"]); self.api = Api(url, code)
+                self.api.token, self.user = result["token"], result["usuario"]; self.remember(result["sg1"]); self.main_screen(result["nombreNegocio"])
+            else:
+                url, code = parse_sg1(self.sg_value.get()); self.api = Api(url, code)
+                reply = self.api.call("POST", "connect", {"codigo": code}); self.remember(self.sg_value.get().strip())
+                result = self.api.call("POST", "auth/guest" if guest else "auth/login", {} if guest else {"usuario": self.login_user.get().strip(), "password": self.login_password.get()})
+                self.api.token, self.user = result["token"], result["usuario"]; self.main_screen(reply["nombreNegocio"])
         except ApiError as exc: messagebox.showerror("Acceso", str(exc), parent=self)
+    def recovery_form(self):
+        win = tk.Toplevel(self); win.title("Recuperar contraseña"); win.configure(bg=BG); win.transient(self); win.grab_set()
+        box = self.card(win, 22); box.pack(fill="both", expand=True)
+        ttk.Label(box, text="Solicitar recuperación", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(box, text="El administrador del negocio podrá generar una contraseña temporal.", style="Card.TLabel", wraplength=420).pack(anchor="w", pady=(5, 14))
+        code, user = tk.StringVar(value=self.saved_code()), tk.StringVar()
+        for label, value, secret in (("Código SG1", code, False), ("Usuario", user, False)):
+            ttk.Label(box, text=label, style="Card.TLabel").pack(anchor="w", pady=(7, 1)); ttk.Entry(box, textvariable=value, show="•" if secret else "").pack(fill="x")
+        def send():
+            try:
+                url, business = parse_sg1(code.get()); Api(url, business).call("POST", "auth/recovery-request", {"usuario": user.get().strip()})
+                win.destroy(); messagebox.showinfo("Recuperación", "Solicitud enviada. Contacta al administrador del negocio.", parent=self)
+            except ApiError as exc: messagebox.showerror("Recuperación", str(exc), parent=win)
+        ttk.Button(box, text="Enviar solicitud", style="Primary.TButton", command=send).pack(anchor="e", pady=(18, 0))
     def registration_form(self):
         win = tk.Toplevel(self); win.title("Crear cuenta"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 24); box.pack(fill="both", expand=True); owner = tk.BooleanVar(value=False); fields = {}
@@ -131,7 +167,7 @@ class App(tk.Tk):
                 body = {key: fields[key].get().strip() for key in ("nombres", "apellidos", "usuario", "password")}
                 if owner.get():
                     body["negocio"] = fields["negocio"].get().strip(); reply = Api(DEFAULT_API).call("POST", "businesses", body)
-                    self.sg_value.set(reply["sg1"]); win.destroy(); messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self); self.connect()
+                    self.sg_value.set(reply["sg1"]); win.destroy(); messagebox.showinfo("Negocio creado", "Guarda este código SG1 y compártelo con tus vendedores:\n\n" + reply["sg1"], parent=self); self.connect_screen()
                 else:
                     url, code = parse_sg1(fields["codigo"].get()); Api(url, code).call("POST", "auth/register", body)
                     self.sg_value.set(fields["codigo"].get().strip()); win.destroy(); messagebox.showinfo("Cuenta creada", "Tu cuenta de vendedor ya puede iniciar sesión.", parent=self)
@@ -154,7 +190,7 @@ class App(tk.Tk):
         buttons = ttk.Frame(box, style="Card.TFrame"); buttons.pack(fill="x", pady=(22, 0))
         ttk.Button(buttons, text="Ingresar", style="Primary.TButton", command=enter).pack(side="left")
         ttk.Button(buttons, text="Entrar como invitado", command=lambda: enter(True)).pack(side="left", padx=9)
-        ttk.Button(box, text="Crear mi cuenta de vendedor", command=self.vendor_form).pack(anchor="w", pady=(14, 0))
+        ttk.Button(box, text="Crear cuenta de vendedor", command=self.registration_form).pack(anchor="w", pady=(14, 0))
         ttk.Button(box, text="Cambiar negocio", command=self.connect_screen).pack(anchor="w", pady=(16, 0))
     def main_screen(self, business):
         self.clear(); self.cart = []
@@ -163,7 +199,9 @@ class App(tk.Tk):
         tk.Label(side, text="StockGo", bg=NAVY, fg="white", font=("Segoe UI Semibold", 22)).pack(anchor="w", padx=22, pady=(28, 3))
         tk.Label(side, text=business, bg=NAVY, fg="#C9E9F4", wraplength=180, justify="left").pack(anchor="w", padx=22, pady=(0, 24))
         self.content = ttk.Frame(root, padding=30); self.content.pack(side="left", fill="both", expand=True)
-        actions = [("Resumen", self.dashboard), ("Inventario", self.inventory), ("Nueva venta", self.sale), ("Ventas", self.sales)]
+        actions = [("Resumen", self.dashboard), ("Inventario", self.inventory)]
+        if self.user.get("rol") in ("administrador", "vendedor"):
+            actions.extend((("Nueva venta", self.sale), ("Mis ventas", self.sales)))
         if self.user.get("rol") == "administrador": actions.append(("Equipo", self.team))
         for title, command in actions: ttk.Button(side, text=title, style="Nav.TButton", command=command).pack(fill="x", padx=12, pady=3)
         tk.Label(side, text=f"{self.user.get('nombres', 'Invitado')}\n{self.user.get('rol', '')}", bg=NAVY, fg="#C9E9F4", justify="left").pack(side="bottom", anchor="w", padx=22, pady=13)
@@ -214,12 +252,24 @@ class App(tk.Tk):
         if self.user.get("rol") == "administrador":
             ttk.Button(tools, text="Agregar producto", command=lambda: self.product_form(None, load)).pack(side="right")
             ttk.Button(tools, text="Editar seleccionado", command=lambda: self.edit_product(tree, load)).pack(side="right", padx=8)
+            ttk.Button(tools, text="Desactivar / eliminar", command=lambda: self.deactivate_product(tree, load)).pack(side="right", padx=8)
         tree.bind("<Double-1>", lambda _: self.edit_product(tree, load) if self.user.get("rol") == "administrador" else None); load()
     def edit_product(self, tree, after):
         selected = tree.selection()
         if not selected: return messagebox.showinfo("Inventario", "Selecciona un producto.", parent=self)
         item = next((p for p in self.products if str(p["id"]) == selected[0]), None)
         if item: self.product_form(item, after)
+    def deactivate_product(self, tree, after):
+        selected = tree.selection()
+        if not selected: return messagebox.showinfo("Inventario", "Selecciona un producto.", parent=self)
+        item = next((p for p in self.products if str(p["id"]) == selected[0]), None)
+        if not item: return
+        answer = messagebox.askyesno("Desactivar producto", f"¿Desactivar {item['nombre']}?\n\nNo se borrará: se conservarán su ficha y el historial de ventas.", parent=self)
+        if not answer: return
+        try:
+            self.api.call("POST", f"products/{item['id']}/deactivate", {})
+            messagebox.showinfo("Inventario", "Producto desactivado. Ya no aparecerá para vender.", parent=self); after()
+        except ApiError as exc: messagebox.showerror("Inventario", str(exc), parent=self)
     def product_form(self, item, after):
         win = tk.Toplevel(self); win.title("Editar producto" if item else "Agregar producto"); win.configure(bg=BG); win.transient(self); win.grab_set()
         box = self.card(win, 22); box.pack(fill="both", expand=True); data, old = {}, item or {}

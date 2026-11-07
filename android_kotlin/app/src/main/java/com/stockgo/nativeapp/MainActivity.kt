@@ -93,10 +93,11 @@ class MainActivity : ComponentActivity() {
                         val bitmap = BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = sample })
                             ?: throw IOException("No se pudo decodificar la imagen.")
                         try {
-                            val scale = (1200.0 / max(bitmap.width, bitmap.height)).coerceAtMost(1.0)
+                            // El catálogo debe viajar ligero en datos móviles. Se intenta
+                            // conservar una foto visible, pero nunca se envían más de 6 KB.
+                            val scale = (640.0 / max(bitmap.width, bitmap.height)).coerceAtMost(1.0)
                             val resized = Bitmap.createScaledBitmap(bitmap, max(1, (bitmap.width * scale).toInt()), max(1, (bitmap.height * scale).toInt()), true)
                             try {
-                                val output = ByteArrayOutputStream()
                                 val orientation = try {
                                     ExifInterface(ByteArrayInputStream(raw)).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
                                 } catch (_: IOException) { ExifInterface.ORIENTATION_NORMAL }
@@ -112,10 +113,23 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 val oriented = Bitmap.createBitmap(resized, 0, 0, resized.width, resized.height, matrix, true)
-                                try { oriented.compress(Bitmap.CompressFormat.PNG, 100, output) }
-                                finally { if (oriented !== resized) oriented.recycle() }
-                                require(output.size() <= 5 * 1024 * 1024) { "La imagen procesada supera 5 MB. Elige otra." }
-                                Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                                try {
+                                    var candidate = oriented
+                                    var ownsCandidate = false
+                                    val output = ByteArrayOutputStream()
+                                    var quality = 72
+                                    while (true) {
+                                        output.reset()
+                                        candidate.compress(Bitmap.CompressFormat.JPEG, quality, output)
+                                        if (output.size() <= 6 * 1024 || (candidate.width <= 96 && candidate.height <= 96)) break
+                                        val next = Bitmap.createScaledBitmap(candidate, max(96, (candidate.width * 0.72).toInt()), max(96, (candidate.height * 0.72).toInt()), true)
+                                        if (ownsCandidate) candidate.recycle()
+                                        candidate = next; ownsCandidate = true; quality = max(35, quality - 8)
+                                    }
+                                    if (ownsCandidate) candidate.recycle()
+                                    require(output.size() <= 6 * 1024) { "No fue posible reducir la imagen a 6 KB. Elige una fotografía más simple." }
+                                    Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                                } finally { if (oriented !== resized) oriented.recycle() }
                             } finally { if (resized !== bitmap) resized.recycle() }
                         } finally { bitmap.recycle() }
                     }
@@ -222,7 +236,7 @@ class MainActivity : ComponentActivity() {
                 if (!busy && !imageLoading) {
                     val popup = PopupMenu(this, menu)
                     val modules = mutableListOf("Inicio", "Inventario")
-                    if (api!!.seller) modules.addAll(listOf("Venta / cuenta", "Historial y estadísticas", "Mi perfil", "Cambiar contraseña"))
+                    if (api!!.seller) modules.addAll(listOf("Nueva venta", "Cuenta actual", "Historial y estadísticas", "Mi perfil", "Cambiar contraseña"))
                     if (api!!.admin) modules.addAll(listOf("Vendedores y equipo", "Invitar al negocio", "Historial de seguridad"))
                     modules.add("Cerrar sesión")
                     modules.forEach { popup.menu.add(it) }
@@ -230,7 +244,8 @@ class MainActivity : ComponentActivity() {
                         when (item.title.toString()) {
                             "Inicio" -> home()
                             "Inventario" -> inventory()
-                            "Venta / cuenta" -> cartScreen()
+                            "Nueva venta" -> inventory()
+                            "Cuenta actual" -> cartScreen()
                             "Historial y estadísticas" -> reports()
                             "Mi perfil" -> profile()
                             "Cambiar contraseña" -> passwordScreen()
@@ -348,26 +363,52 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("stockgo", MODE_PRIVATE)
         val hero = gradientSection(page, "Menos pendientes.\nMás control.", "Todo tu inventario en un solo lugar, simple, ordenado y siempre contigo.")
         listOf("✓  Productos organizados", "✓  Acceso según tu rol", "✓  Información protegida en la nube").forEach { hero.addView(text(it, 14f).apply { setTextColor(Color.WHITE) }) }
-        val box = section(title = "Bienvenido de nuevo", subtitle = "Ingresa con el código de tu negocio y tu cuenta personal.")
-        val code = field(box, "Código completo SG1", preferences.getString("codigo", "").orEmpty())
+        val box = section(title = "Bienvenido de nuevo", subtitle = "El administrador entra con su negocio. El vendedor vincula SG1 solo la primera vez.")
+        val roles = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val administrator = RadioButton(this).apply { id = View.generateViewId(); text = "Administrador"; isChecked = true }
+        val seller = RadioButton(this).apply { id = View.generateViewId(); text = "Vendedor" }
+        roles.addView(administrator, LinearLayout.LayoutParams(0, -2, 1f)); roles.addView(seller, LinearLayout.LayoutParams(0, -2, 1f)); box.addView(roles)
+        val businessArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; box.addView(businessArea)
+        val business = field(businessArea, "Nombre del negocio")
+        val codeArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; box.addView(codeArea)
+        val savedCode = preferences.getString("codigo", "").orEmpty()
+        val code = field(codeArea, "Código completo SG1", savedCode)
         code.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         val username = field(box, "Usuario")
         val password = field(box, "Contraseña", password = true)
+        val codeHint = text("El código SG1 vincula a un vendedor con el negocio. Se guardará en este dispositivo después del primer acceso.", 13f).apply { setTextColor(Color.rgb(84, 112, 132)) }
+        box.addView(codeHint)
+        fun updateRole() {
+            val adminLogin = administrator.isChecked
+            businessArea.visibility = if (adminLogin) View.VISIBLE else View.GONE
+            codeArea.visibility = if (!adminLogin && savedCode.isBlank()) View.VISIBLE else View.GONE
+            codeHint.visibility = if (adminLogin) View.GONE else View.VISIBLE
+        }
+        roles.setOnCheckedChangeListener { _, _ -> updateRole() }; updateRole()
         button(box, "Iniciar sesión  →") {
             action {
-                val client = Api(BusinessCode.parse(code.text.toString()))
-                client.connect()
-                api = client
-                preferences.edit().putString("codigo", code.text.toString().trim()).apply()
-                client.login(username.text.toString().trim(), password.text.toString())
+                if (administrator.isChecked) {
+                    val bootstrap = Api(BusinessCode(CLOUD_API_URL, "00000000000000000000000000000000", false))
+                    val result = bootstrap.request("POST", "auth/admin-login", JSONObject().put("negocio", business.text.toString().trim()).put("usuario", username.text.toString().trim()).put("password", password.text.toString()))
+                    val sg1 = result.getString("sg1")
+                    val client = Api(BusinessCode.parse(sg1)).apply {
+                        token = result.getString("token"); user = result.getJSONObject("usuario"); name = result.getString("nombreNegocio")
+                    }
+                    preferences.edit().putString("codigo", sg1).apply(); api = client
+                } else {
+                    val rawCode = if (codeArea.visibility == View.VISIBLE) code.text.toString() else savedCode
+                    val client = Api(BusinessCode.parse(rawCode)); client.connect(); client.login(username.text.toString().trim(), password.text.toString())
+                    preferences.edit().putString("codigo", rawCode.trim()).apply(); api = client
+                }
                 afterLogin()
             }
         }
         button(box, "Continuar como invitado", green) {
             action {
-                val client = Api(BusinessCode.parse(code.text.toString()))
+                val rawCode = if (codeArea.visibility == View.VISIBLE) code.text.toString() else savedCode
+                val client = Api(BusinessCode.parse(rawCode))
                 client.connect(); api = client
-                preferences.edit().putString("codigo", code.text.toString().trim()).apply()
+                preferences.edit().putString("codigo", rawCode.trim()).apply()
                 client.login("", "", true); afterLogin()
             }
         }
@@ -583,7 +624,7 @@ class MainActivity : ComponentActivity() {
         fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { page.addView(it) }
         var current = row()
         moduleCard(current, "▣", if (api!!.admin) "Gestionar productos" else "Consultar productos", "Catálogo, fotos y existencias.", blue) { inventory() }
-        if (api!!.seller) moduleCard(current, "＋", "Ventas", "Arma una cuenta y vende por unidad.", green) { inventory() }
+        if (api!!.seller) moduleCard(current, "＋", "Nueva venta", "Elige productos, arma la cuenta y confirma la venta.", green) { inventory() }
         else { val empty = Space(this); current.addView(empty, LinearLayout.LayoutParams(0, 1, 1f)) }
         if (api!!.seller) {
             current = row()
@@ -686,7 +727,7 @@ class MainActivity : ComponentActivity() {
         }
         if (api!!.admin && active(p)) {
             button(page, "Editar producto") { productForm(p) }
-            button(page, "Desactivar producto", Color.rgb(164, 55, 55)) {
+            button(page, "Eliminar / desactivar producto", Color.rgb(164, 55, 55)) {
                 AlertDialog.Builder(this).setTitle("¿Desactivar producto?").setMessage("Se conservarán su ficha y el historial de ventas.")
                     .setNegativeButton("Cancelar", null).setPositiveButton("Desactivar") { _, _ -> action {
                         api!!.request("POST", "products/${p.getInt("id")}/deactivate", JSONObject()); inventory()
