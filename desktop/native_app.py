@@ -69,7 +69,7 @@ class App(tk.Tk):
         self.clear()
         root = tk.Frame(self, bg=BG, padx=46, pady=42); root.pack(fill="both", expand=True)
         shell = tk.Frame(root, bg=BG); shell.place(relx=.5, rely=.5, anchor="center", relwidth=.92, relheight=.82)
-        hero = tk.Frame(shell, bg=NAVY, width=470, padx=42, pady=48); hero.pack(side="left", fill="both", expand=True); hero.pack_propagate(False)
+        hero = tk.Frame(shell, bg=NAVY, width=430, padx=42, pady=48); hero.pack(side="left", fill="both", expand=False); hero.pack_propagate(False)
         tk.Label(hero, text="▣", bg=BLUE, fg="white", font=("Segoe UI Symbol", 28), padx=14, pady=9).pack(anchor="w")
         tk.Label(hero, text="StockGo", bg=NAVY, fg="white", font=("Segoe UI Semibold", 30)).pack(anchor="w", pady=(26, 6))
         tk.Label(hero, text="Menos pendientes.\nMás control.", bg=NAVY, fg="white", justify="left", font=("Segoe UI Semibold", 27)).pack(anchor="w")
