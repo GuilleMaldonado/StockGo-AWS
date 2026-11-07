@@ -93,9 +93,8 @@ class MainActivity : ComponentActivity() {
                         val bitmap = BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = sample })
                             ?: throw IOException("No se pudo decodificar la imagen.")
                         try {
-                            // El catálogo debe viajar ligero en datos móviles. Se intenta
-                            // conservar una foto visible, pero nunca se envían más de 6 KB.
-                            val scale = (640.0 / max(bitmap.width, bitmap.height)).coerceAtMost(1.0)
+                            // El catálogo viaja ligero: WebP y un máximo de 10 KB por imagen.
+                            val scale = (800.0 / max(bitmap.width, bitmap.height)).coerceAtMost(1.0)
                             val resized = Bitmap.createScaledBitmap(bitmap, max(1, (bitmap.width * scale).toInt()), max(1, (bitmap.height * scale).toInt()), true)
                             try {
                                 val orientation = try {
@@ -117,24 +116,25 @@ class MainActivity : ComponentActivity() {
                                     var candidate = oriented
                                     var ownsCandidate = false
                                     val output = ByteArrayOutputStream()
-                                    var quality = 72
+                                    var quality = 78
                                     while (true) {
                                         output.reset()
-                                        candidate.compress(Bitmap.CompressFormat.JPEG, quality, output)
-                                        if (output.size() <= 6 * 1024 || (candidate.width <= 96 && candidate.height <= 96)) break
-                                        val next = Bitmap.createScaledBitmap(candidate, max(96, (candidate.width * 0.72).toInt()), max(96, (candidate.height * 0.72).toInt()), true)
+                                        @Suppress("DEPRECATION")
+                                        candidate.compress(Bitmap.CompressFormat.WEBP, quality, output)
+                                        if (output.size() <= 10 * 1024 || (candidate.width <= 128 && candidate.height <= 128)) break
+                                        val next = Bitmap.createScaledBitmap(candidate, max(128, (candidate.width * 0.75).toInt()), max(128, (candidate.height * 0.75).toInt()), true)
                                         if (ownsCandidate) candidate.recycle()
-                                        candidate = next; ownsCandidate = true; quality = max(35, quality - 8)
+                                        candidate = next; ownsCandidate = true; quality = max(40, quality - 8)
                                     }
                                     if (ownsCandidate) candidate.recycle()
-                                    require(output.size() <= 6 * 1024) { "No fue posible reducir la imagen a 6 KB. Elige una fotografía más simple." }
+                                    require(output.size() <= 10 * 1024) { "No fue posible reducir la imagen a 10 KB. Elige una fotografía más simple." }
                                     Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
                                 } finally { if (oriented !== resized) oriented.recycle() }
                             } finally { if (resized !== bitmap) resized.recycle() }
                         } finally { bitmap.recycle() }
                     }
                     imageBase64 = encoded
-                    imageLabel?.text = "Imagen lista para guardar"
+                    imageLabel?.text = "Imagen WebP lista (${encoded.length * 3 / 4 / 1024} KB)"
                     preview?.let { showImage(it, encoded) }
                 } catch (e: CancellationException) { throw e
                 } catch (e: Exception) {
@@ -756,7 +756,7 @@ class MainActivity : ComponentActivity() {
         imageBase64?.let { showImage(preview!!, it) }
         imageLabel = text(if (imageBase64 == null) "Sin imagen" else "Imagen actual")
         photo.addView(imageLabel)
-        button(photo, "Elegir imagen") { imagePicker.launch("image/*") }
+        button(photo, "Elegir imagen (WebP ≤ 10 KB)") { imagePicker.launch("image/*") }
         button(photo, "Quitar imagen", navy) { imageBase64 = null; preview?.setImageDrawable(null); imageLabel?.text = "Sin imagen" }
         val technical = section(title = "4. Ficha técnica", subtitle = "Las listas permiten elegir una opción o escribir otra del fabricante. No se deduce compatibilidad automáticamente.")
         val technicalInputs = linkedMapOf<String, EditText>()

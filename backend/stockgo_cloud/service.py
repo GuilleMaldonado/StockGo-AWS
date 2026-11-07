@@ -475,7 +475,8 @@ class Service:
             except ValueError as exc: raise Error('Vencimiento inválido. Usa AAAA-MM-DD.') from exc
         if product and product.cantidad > 0 and product.ficha.get('lote') and (product.ficha.get('lote') != lot or product.ficha.get('vencimiento') != expiry):
             raise Error('No cambies lote ni vencimiento mientras tenga existencias; crea otro código.')
-        image = body.get('imagen')
+        # Una edición sin el campo imagen conserva la foto existente. `null` la quita.
+        image = body.get('imagen', product.imagen if product else None)
         if image is not None:
             if not isinstance(image, str): raise Error('Imagen inválida.')
             try: image = base64.b64decode(image, validate=True)

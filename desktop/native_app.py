@@ -4,11 +4,13 @@ import json
 import os
 import secrets
 import tkinter as tk
+from io import BytesIO
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
+from PIL import Image, ImageOps
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "StockGo" / "escritorio.json"
 # Dirección comprobada del servicio central en Render. Puede sobrescribirse para
 # pruebas con STOCKGO_API_URL, pero los usuarios finales no deben escribirla.
@@ -16,6 +18,22 @@ DEFAULT_API = os.environ.get("STOCKGO_API_URL", "https://stockgo-api-demo.onrend
 BG, WHITE, NAVY, BLUE, TEAL, MUTED, RED = "#F3F8FC", "#FFFFFF", "#10334B", "#087FC1", "#0FA6C9", "#587086", "#C84343"
 class ApiError(Exception): pass
 def money(value): return f"Q {float(value) / 100:,.2f}"
+def webp_image(path):
+    """Convierte una fotografía a WebP de hasta 10 KB antes de mandarla a la API."""
+    try:
+        with Image.open(path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail((800, 800))
+            quality, output = 78, BytesIO()
+            while True:
+                output.seek(0); output.truncate(0); image.save(output, format="WEBP", quality=quality, method=6)
+                if output.tell() <= 10 * 1024: break
+                if image.width <= 128 and image.height <= 128: raise ApiError("No fue posible reducir la imagen a 10 KB. Elige una fotografía más simple.")
+                image = image.resize((max(128, int(image.width * .75)), max(128, int(image.height * .75))), Image.Resampling.LANCZOS)
+                quality = max(40, quality - 8)
+            return base64.b64encode(output.getvalue()).decode(), output.tell()
+    except ApiError: raise
+    except Exception as exc: raise ApiError("No se pudo convertir la imagen a WebP.") from exc
 def parse_sg1(value):
     if not value.strip().startswith("SG1-"): raise ApiError("El código debe iniciar con SG1-.")
     try:
@@ -279,11 +297,28 @@ class App(tk.Tk):
             default = str(old.get(key, "Repuesto" if key == "categoria" else "0" if key in ("cantidad", "stockMinimo", "precio", "costo") else "")); value = tk.StringVar(value=default)
             field = ttk.Combobox(box, textvariable=value, values=("Repuesto", "Lubricante", "Filtro", "Aditivo", "Accesorio"), state="readonly") if key == "categoria" else ttk.Entry(box, textvariable=value, width=46)
             field.pack(fill="x"); data[key] = value
+        photo = {"changed": False, "value": None}
+        photo_status = tk.StringVar(value="Imagen actual disponible" if old.get("imagen") else "Sin imagen")
+        ttk.Label(box, text="Imagen del producto", style="Card.TLabel").pack(anchor="w", pady=(12, 1))
+        ttk.Label(box, textvariable=photo_status, style="Card.TLabel", foreground=MUTED).pack(anchor="w")
+        photo_actions = ttk.Frame(box, style="Card.TFrame"); photo_actions.pack(fill="x", pady=(5, 3))
+        def choose_photo():
+            path = filedialog.askopenfilename(parent=win, title="Elegir imagen", filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.webp"), ("Todos los archivos", "*.*")])
+            if not path: return
+            try:
+                photo["value"], size = webp_image(path); photo["changed"] = True
+                photo_status.set(f"WebP optimizada: {size / 1024:.1f} KB (máximo 10 KB)")
+            except ApiError as exc: messagebox.showerror("Imagen", str(exc), parent=win)
+        def remove_photo():
+            photo["changed"], photo["value"] = True, None; photo_status.set("La imagen se quitará al guardar")
+        ttk.Button(photo_actions, text="Elegir imagen", command=choose_photo).pack(side="left")
+        ttk.Button(photo_actions, text="Quitar imagen", command=remove_photo).pack(side="left", padx=8)
         def save():
             try:
                 body = {key: data[key].get().strip() for _, key in specs}
                 body["cantidad"], body["stockMinimo"] = int(body["cantidad"]), int(body["stockMinimo"])
                 body["precio"], body["costo"] = float(body["precio"]), float(body["costo"])
+                if photo["changed"]: body["imagen"] = photo["value"]
                 self.api.call("PUT" if item else "POST", f"products/{item['id']}" if item else "products", body); win.destroy(); after()
             except (ValueError, ApiError) as exc: messagebox.showerror("Producto", str(exc), parent=win)
         ttk.Button(box, text="Guardar producto", style="Primary.TButton", command=save).pack(anchor="e", pady=(15, 0))
